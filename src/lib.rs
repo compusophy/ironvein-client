@@ -22,7 +22,7 @@ impl Client {
     #[wasm_bindgen(constructor)]
     pub fn new() -> Client {
         Client {
-            server_url: "http://localhost:8080".to_string(),
+            server_url: "https://ironvein-server-production.up.railway.app".to_string(),
         }
     }
 
