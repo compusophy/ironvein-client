@@ -1,8 +1,8 @@
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
-use web_sys::{WebSocket, MessageEvent, ErrorEvent, Event};
-use serde::{Deserialize, Serialize};
-use js_sys::Date;
+use web_sys::{console, HtmlElement, WebSocket, MessageEvent, Event, ErrorEvent, MouseEvent, HtmlCanvasElement, CanvasRenderingContext2d};
+use serde::{Serialize, Deserialize};
+use std::collections::HashMap;
 
 // Import the `console.log` function from the Web API
 #[wasm_bindgen]
@@ -16,58 +16,314 @@ macro_rules! console_log {
     ($($t:tt)*) => (log(&format_args!($($t)*).to_string()))
 }
 
-// Chat message structure matching the server
+// Game constants
+const GRID_SIZE: u32 = 64;
+const CELL_SIZE: u32 = 10; // pixels per grid cell
+const CANVAS_SIZE: u32 = GRID_SIZE * CELL_SIZE; // 640x640 pixels
+
+// Game structures
 #[derive(Debug, Clone, Serialize, Deserialize)]
+struct Player {
+    username: String,
+    x: u32,
+    y: u32,
+    room: String,
+    health: u32,
+    resources: u32,
+}
+
+#[derive(Debug, Clone)]
+struct GameMap {
+    grid: [[CellType; GRID_SIZE as usize]; GRID_SIZE as usize],
+    width: u32,
+    height: u32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum CellType {
+    Empty,
+    Player(u32), // Player ID
+    Resource,
+    Obstacle,
+}
+
+impl Default for CellType {
+    fn default() -> Self {
+        CellType::Empty
+    }
+}
+
+impl GameMap {
+    fn new() -> Self {
+        Self {
+            grid: [[CellType::Empty; GRID_SIZE as usize]; GRID_SIZE as usize],
+            width: GRID_SIZE,
+            height: GRID_SIZE,
+        }
+    }
+
+    fn is_valid_position(&self, x: u32, y: u32) -> bool {
+        x < self.width && y < self.height
+    }
+
+    fn is_empty(&self, x: u32, y: u32) -> bool {
+        if !self.is_valid_position(x, y) {
+            return false;
+        }
+        self.grid[y as usize][x as usize] == CellType::Empty
+    }
+
+    fn place_player(&mut self, x: u32, y: u32, player_id: u32) -> bool {
+        if self.is_empty(x, y) {
+            self.grid[y as usize][x as usize] = CellType::Player(player_id);
+            true
+        } else {
+            false
+        }
+    }
+
+    fn remove_player(&mut self, x: u32, y: u32) {
+        if self.is_valid_position(x, y) {
+            self.grid[y as usize][x as usize] = CellType::Empty;
+        }
+    }
+}
+
+// WebSocket message types (expanded for game)
+#[derive(Serialize, Deserialize, Debug)]
+#[serde(tag = "type")]
+enum WebSocketMessage {
+    Join { username: String, room: String },
+    Message { username: String, message: String, room: String },
+    // Game-specific messages
+    Move { username: String, x: u32, y: u32, room: String },
+    PlayerUpdate { username: String, x: u32, y: u32, health: u32, resources: u32 },
+    GameState { players: Vec<Player> },
+}
+
+#[derive(Serialize, Deserialize, Debug)]
 struct ChatMessage {
-    id: String,
     username: String,
     message: String,
     timestamp: String,
-    room: String,
 }
 
-// WebSocket message types matching the server
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "type")]
-enum WebSocketMessage {
-    #[serde(rename = "join")]
-    Join { username: String, room: String },
-    #[serde(rename = "message")]
-    Message { message: String },
-    #[serde(rename = "chat_message")]
-    ChatMessage(ChatMessage),
-    #[serde(rename = "user_joined")]
-    UserJoined { username: String, room: String },
-    #[serde(rename = "user_left")]
-    UserLeft { username: String, room: String },
-    #[serde(rename = "error")]
-    Error { message: String },
+#[derive(Serialize, Deserialize, Debug)]
+struct UserJoined {
+    username: String,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+struct UserLeft {
+    username: String,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+struct ErrorMessage {
+    message: String,
 }
 
 #[wasm_bindgen]
-pub struct ChatClient {
-    websocket: Option<WebSocket>,
-    connected: bool,
+pub struct IronVeinClient {
     username: String,
     room: String,
-    server_url: String,
+    websocket: Option<WebSocket>,
+    // Game state
+    game_map: GameMap,
+    players: HashMap<String, Player>,
+    my_player: Option<Player>,
+    canvas: Option<HtmlCanvasElement>,
+    context: Option<CanvasRenderingContext2d>,
 }
 
 #[wasm_bindgen]
-impl ChatClient {
+impl IronVeinClient {
     #[wasm_bindgen(constructor)]
-    pub fn new() -> ChatClient {
-        // Auto-detect server URL based on current location
-        let server_url = Self::get_server_url();
-        console_log!("Auto-detected server URL: {}", server_url);
-        
-        ChatClient {
-            websocket: None,
-            connected: false,
+    pub fn new() -> Self {
+        console_log!("🚀 IronVein Chat Client WASM module initialized!");
+        Self {
             username: String::new(),
-            room: "general".to_string(),
-            server_url,
+            room: String::new(),
+            websocket: None,
+            game_map: GameMap::new(),
+            players: HashMap::new(),
+            my_player: None,
+            canvas: None,
+            context: None,
         }
+    }
+
+    #[wasm_bindgen]
+    pub fn setup_game_canvas(&mut self, canvas_id: &str) -> Result<(), JsValue> {
+        let window = web_sys::window().unwrap();
+        let document = window.document().unwrap();
+        
+        let canvas = document
+            .get_element_by_id(canvas_id)
+            .ok_or("Canvas not found")?
+            .dyn_into::<HtmlCanvasElement>()?;
+
+        canvas.set_width(CANVAS_SIZE);
+        canvas.set_height(CANVAS_SIZE);
+
+        let context = canvas
+            .get_context("2d")?
+            .ok_or("2d context not found")?
+            .dyn_into::<CanvasRenderingContext2d>()?;
+
+        // Set up click handler for canvas
+        let username_clone = self.username.clone();
+        let room_clone = self.room.clone();
+        let websocket_clone = self.websocket.clone();
+        
+        let click_callback = Closure::wrap(Box::new(move |event: MouseEvent| {
+            let canvas = event.target().unwrap().dyn_into::<HtmlCanvasElement>().unwrap();
+            let rect = canvas.get_bounding_client_rect();
+            
+            let x = ((event.client_x() as f64 - rect.x()) / CELL_SIZE as f64) as u32;
+            let y = ((event.client_y() as f64 - rect.y()) / CELL_SIZE as f64) as u32;
+            
+            if x < GRID_SIZE && y < GRID_SIZE {
+                console_log!("🎯 Click at grid position: ({}, {})", x, y);
+                
+                // Send move command to server
+                if let Some(ref websocket) = websocket_clone {
+                    let move_message = WebSocketMessage::Move {
+                        username: username_clone.clone(),
+                        x,
+                        y,
+                        room: room_clone.clone(),
+                    };
+                    
+                    if let Ok(message_json) = serde_json::to_string(&move_message) {
+                        let _ = websocket.send_with_str(&message_json);
+                        console_log!("📤 Sent move command: ({}, {})", x, y);
+                    }
+                }
+            }
+        }) as Box<dyn FnMut(MouseEvent)>);
+
+        canvas.set_onclick(Some(click_callback.as_ref().unchecked_ref()));
+        click_callback.forget();
+
+        self.canvas = Some(canvas);
+        self.context = Some(context);
+        
+        // Initial render
+        self.render_game()?;
+        
+        console_log!("🎮 Game canvas setup complete! Click to move around the 64x64 grid.");
+        Ok(())
+    }
+
+    #[wasm_bindgen]
+    pub fn render_game(&self) -> Result<(), JsValue> {
+        if let (Some(context), Some(_canvas)) = (&self.context, &self.canvas) {
+            // Clear canvas
+            context.clear_rect(0.0, 0.0, CANVAS_SIZE as f64, CANVAS_SIZE as f64);
+            
+            // Draw grid
+            self.draw_grid(context)?;
+            
+            // Draw players
+            self.draw_players(context)?;
+            
+            // Draw my player (highlighted)
+            if let Some(ref my_player) = self.my_player {
+                self.draw_my_player(context, my_player)?;
+            }
+        }
+        Ok(())
+    }
+
+    fn draw_grid(&self, context: &CanvasRenderingContext2d) -> Result<(), JsValue> {
+        context.set_stroke_style(&"#333333".into());
+        context.set_line_width(0.5);
+        
+        // Draw vertical lines
+        for x in 0..=GRID_SIZE {
+            let px = (x * CELL_SIZE) as f64;
+            context.begin_path();
+            context.move_to(px, 0.0);
+            context.line_to(px, CANVAS_SIZE as f64);
+            context.stroke();
+        }
+        
+        // Draw horizontal lines
+        for y in 0..=GRID_SIZE {
+            let py = (y * CELL_SIZE) as f64;
+            context.begin_path();
+            context.move_to(0.0, py);
+            context.line_to(CANVAS_SIZE as f64, py);
+            context.stroke();
+        }
+        
+        Ok(())
+    }
+
+    fn draw_players(&self, context: &CanvasRenderingContext2d) -> Result<(), JsValue> {
+        context.set_fill_style(&"#ff6b6b".into()); // Red for other players
+        
+        for player in self.players.values() {
+            if Some(&player.username) != self.my_player.as_ref().map(|p| &p.username) {
+                let px = (player.x * CELL_SIZE) as f64 + 2.0;
+                let py = (player.y * CELL_SIZE) as f64 + 2.0;
+                let size = (CELL_SIZE - 4) as f64;
+                
+                context.fill_rect(px, py, size, size);
+                
+                // Draw username
+                context.set_fill_style(&"#000000".into());
+                context.set_font("8px Arial");
+                context.fill_text(&player.username, px, py - 2.0)?;
+                context.set_fill_style(&"#ff6b6b".into());
+            }
+        }
+        
+        Ok(())
+    }
+
+    fn draw_my_player(&self, context: &CanvasRenderingContext2d, player: &Player) -> Result<(), JsValue> {
+        context.set_fill_style(&"#4ecdc4".into()); // Teal for my player
+        
+        let px = (player.x * CELL_SIZE) as f64 + 2.0;
+        let py = (player.y * CELL_SIZE) as f64 + 2.0;
+        let size = (CELL_SIZE - 4) as f64;
+        
+        context.fill_rect(px, py, size, size);
+        
+        // Draw border to highlight
+        context.set_stroke_style(&"#ffffff".into());
+        context.set_line_width(2.0);
+        context.stroke_rect(px, py, size, size);
+        
+        // Draw username
+        context.set_fill_style(&"#000000".into());
+        context.set_font("8px Arial");
+        context.fill_text(&format!("{} (YOU)", player.username), px, py - 2.0)?;
+        
+        Ok(())
+    }
+
+    #[wasm_bindgen]
+    pub fn set_user_info(&mut self, username: &str, room: &str) {
+        self.username = username.to_string();
+        self.room = room.to_string();
+        
+        // Initialize my player at random position
+        let x = (js_sys::Math::random() * GRID_SIZE as f64) as u32;
+        let y = (js_sys::Math::random() * GRID_SIZE as f64) as u32;
+        
+        self.my_player = Some(Player {
+            username: username.to_string(),
+            x,
+            y,
+            room: room.to_string(),
+            health: 100,
+            resources: 0,
+        });
+        
+        console_log!("User info set: {} in room {} at position ({}, {})", username, room, x, y);
     }
 
     fn get_server_url() -> String {
@@ -101,19 +357,11 @@ impl ChatClient {
     }
 
     #[wasm_bindgen]
-    pub fn set_user_info(&mut self, username: String, room: String) {
-        self.username = username;
-        self.room = room;
-        console_log!("User info set: {} in room {}", self.username, self.room);
-    }
-
-    #[wasm_bindgen]
     pub fn connect(&mut self) -> Result<(), JsValue> {
-        if self.connected {
-            return Ok(());
-        }
-
-        let ws_url = format!("{}/ws/{}", self.server_url, self.room);
+        let server_url = Self::get_server_url();
+        let ws_url = format!("{}/ws/{}", server_url, self.room);
+        
+        console_log!("Auto-detected server URL: {}", server_url);
         console_log!("Connecting to WebSocket: {}", ws_url);
 
         let websocket = WebSocket::new(&ws_url)?;
@@ -122,6 +370,7 @@ impl ChatClient {
         let username_clone = self.username.clone();
         let room_clone = self.room.clone();
         let websocket_clone = websocket.clone();
+        let my_player_clone = self.my_player.clone();
         
         let onopen_callback = Closure::wrap(Box::new(move |_event: Event| {
             console_log!("WebSocket connected!");
@@ -136,39 +385,78 @@ impl ChatClient {
                 let _ = websocket_clone.send_with_str(&message_json);
                 console_log!("Auto-joined room {} as {}", room_clone, username_clone);
             }
+
+            // Send initial position
+            if let Some(ref player) = my_player_clone {
+                let move_message = WebSocketMessage::Move {
+                    username: player.username.clone(),
+                    x: player.x,
+                    y: player.y,
+                    room: player.room.clone(),
+                };
+                
+                if let Ok(message_json) = serde_json::to_string(&move_message) {
+                    let _ = websocket_clone.send_with_str(&message_json);
+                    console_log!("🎮 Sent initial position: ({}, {})", player.x, player.y);
+                }
+            }
         }) as Box<dyn FnMut(Event)>);
         websocket.set_onopen(Some(onopen_callback.as_ref().unchecked_ref()));
         onopen_callback.forget();
 
+        // Handle incoming messages        
         let onmessage_callback = Closure::wrap(Box::new(move |event: MessageEvent| {
-            if let Ok(text) = event.data().dyn_into::<js_sys::JsString>() {
-                let message_text = text.as_string().unwrap_or_default();
-                console_log!("Received message: {}", message_text);
+            if let Ok(message_text) = event.data().dyn_into::<js_sys::JsString>() {
+                let message_str: String = message_text.into();
                 
-                // Parse and handle the message
-                if let Ok(ws_msg) = serde_json::from_str::<WebSocketMessage>(&message_text) {
-                    Self::handle_message(ws_msg);
+                // Try to parse as different message types
+                if let Ok(ws_message) = serde_json::from_str::<WebSocketMessage>(&message_str) {
+                    match ws_message {
+                        WebSocketMessage::PlayerUpdate { username, x, y, health: _, resources: _ } => {
+                            console_log!("🎮 Player {} moved to ({}, {})", username, x, y);
+                            // TODO: Update players HashMap and re-render
+                        }
+                        WebSocketMessage::GameState { players } => {
+                            console_log!("🌍 Received game state with {} players", players.len());
+                            // TODO: Update all players and re-render
+                        }
+                        _ => {
+                            console_log!("📨 Chat/other message: {}", message_str);
+                        }
+                    }
+                } else {
+                    // Try parsing as legacy chat messages
+                    if let Ok(chat_msg) = serde_json::from_str::<ChatMessage>(&message_str) {
+                        append_message(&format!("[{}] {}: {}", chat_msg.timestamp, chat_msg.username, chat_msg.message));
+                    } else if let Ok(user_joined) = serde_json::from_str::<UserJoined>(&message_str) {
+                        append_message(&format!("🟢 {} joined the room", user_joined.username));
+                    } else if let Ok(user_left) = serde_json::from_str::<UserLeft>(&message_str) {
+                        append_message(&format!("🔴 {} left the room", user_left.username));
+                    } else if let Ok(error_msg) = serde_json::from_str::<ErrorMessage>(&message_str) {
+                        append_message(&format!("❌ Error: {}", error_msg.message));
+                    } else {
+                        console_log!("📨 Unknown message format: {}", message_str);
+                    }
                 }
             }
         }) as Box<dyn FnMut(MessageEvent)>);
         websocket.set_onmessage(Some(onmessage_callback.as_ref().unchecked_ref()));
         onmessage_callback.forget();
 
-        let onerror_callback = Closure::wrap(Box::new(move |event: ErrorEvent| {
-            console_log!("WebSocket error: {:?}", event);
+        let onerror_callback = Closure::wrap(Box::new(|error_event: ErrorEvent| {
+            console_log!("Connection failed: {:?}", error_event);
         }) as Box<dyn FnMut(ErrorEvent)>);
         websocket.set_onerror(Some(onerror_callback.as_ref().unchecked_ref()));
         onerror_callback.forget();
 
-        let onclose_callback = Closure::wrap(Box::new(move |_event: Event| {
-            console_log!("WebSocket disconnected");
+        let onclose_callback = Closure::wrap(Box::new(|_event: Event| {
+            console_log!("WebSocket connection closed");
+            append_message("❌ Connection lost. Refresh to reconnect.");
         }) as Box<dyn FnMut(Event)>);
         websocket.set_onclose(Some(onclose_callback.as_ref().unchecked_ref()));
         onclose_callback.forget();
 
         self.websocket = Some(websocket);
-        self.connected = true;
-
         Ok(())
     }
 
@@ -180,123 +468,66 @@ impl ChatClient {
     }
 
     #[wasm_bindgen]
-    pub fn send_message(&self, message: String) -> Result<(), JsValue> {
+    pub fn send_message(&self, message: &str) -> Result<(), JsValue> {
         if let Some(ref websocket) = self.websocket {
-            let chat_message = WebSocketMessage::Message { message };
+            let chat_message = WebSocketMessage::Message {
+                username: self.username.clone(),
+                message: message.to_string(),
+                room: self.room.clone(),
+            };
             
             let message_json = serde_json::to_string(&chat_message)
                 .map_err(|e| JsValue::from_str(&format!("Serialization error: {}", e)))?;
             
             websocket.send_with_str(&message_json)?;
-            console_log!("Sent message: {}", message_json);
+            console_log!("Sent message: {}", message);
         }
         Ok(())
     }
 
     #[wasm_bindgen]
-    pub fn disconnect(&mut self) {
-        if let Some(websocket) = self.websocket.take() {
-            let _ = websocket.close();
-            self.connected = false;
-            console_log!("Disconnected from WebSocket");
+    pub fn get_grid_size(&self) -> u32 {
+        GRID_SIZE
+    }
+
+    #[wasm_bindgen]
+    pub fn get_my_position(&self) -> Option<js_sys::Array> {
+        if let Some(ref player) = self.my_player {
+            let position = js_sys::Array::new();
+            position.push(&JsValue::from(player.x));
+            position.push(&JsValue::from(player.y));
+            Some(position)
+        } else {
+            None
         }
     }
+}
 
-    #[wasm_bindgen]
-    pub fn is_connected(&self) -> bool {
-        self.connected
-    }
-
-    #[wasm_bindgen]
-    pub fn get_username(&self) -> String {
-        self.username.clone()
-    }
-
-    #[wasm_bindgen]
-    pub fn get_room(&self) -> String {
-        self.room.clone()
-    }
-
-    #[wasm_bindgen]
-    pub fn get_server_info(&self) -> String {
-        format!("Connected to: {}", self.server_url)
-    }
-
-    // Static method to handle incoming messages
-    fn handle_message(message: WebSocketMessage) {
-        match message {
-            WebSocketMessage::ChatMessage(chat_msg) => {
-                Self::display_chat_message(chat_msg);
-            }
-            WebSocketMessage::UserJoined { username, room } => {
-                Self::display_system_message(&format!("{} joined {}", username, room));
-            }
-            WebSocketMessage::UserLeft { username, room } => {
-                Self::display_system_message(&format!("{} left {}", username, room));
-            }
-            WebSocketMessage::Error { message } => {
-                Self::display_error_message(&message);
-            }
-            _ => {}
-        }
-    }
-
-    fn display_chat_message(chat_msg: ChatMessage) {
-        let window = web_sys::window().unwrap();
-        let document = window.document().unwrap();
+// Helper functions
+fn append_message(message: &str) {
+    let window = web_sys::window().unwrap();
+    let document = window.document().unwrap();
+    
+    if let Some(chat_messages) = document.get_element_by_id("chatMessages") {
+        let new_message = document.create_element("div").unwrap();
+        new_message.set_text_content(Some(message));
+        chat_messages.append_child(&new_message).unwrap();
         
-        if let Some(messages_container) = document.get_element_by_id("messages") {
-            let message_div = document.create_element("div").unwrap();
-            message_div.set_class_name("message");
-            
-            let timestamp = Self::format_timestamp(&chat_msg.timestamp);
-            let content = format!(
-                "<span class=\"timestamp\">[{}]</span> <span class=\"username\">{}</span>: <span class=\"text\">{}</span>",
-                timestamp, chat_msg.username, chat_msg.message
-            );
-            
-            message_div.set_inner_html(&content);
-            messages_container.append_child(&message_div).unwrap();
-            
-            // Scroll to bottom
-            messages_container.set_scroll_top(messages_container.scroll_height());
-        }
+        // Auto-scroll to bottom
+        chat_messages.set_scroll_top(chat_messages.scroll_height());
     }
+}
 
-    fn display_system_message(message: &str) {
-        let window = web_sys::window().unwrap();
-        let document = window.document().unwrap();
-        
-        if let Some(messages_container) = document.get_element_by_id("messages") {
-            let message_div = document.create_element("div").unwrap();
-            message_div.set_class_name("system-message");
-            message_div.set_inner_html(&format!("🔔 {}", message));
-            
-            messages_container.append_child(&message_div).unwrap();
-            messages_container.set_scroll_top(messages_container.scroll_height());
-        }
-    }
+// Macro for console logging
+macro_rules! console_log {
+    ($($t:tt)*) => (console::log_1(&format!($($t)*).into()))
+}
 
-    fn display_error_message(message: &str) {
-        let window = web_sys::window().unwrap();
-        let document = window.document().unwrap();
-        
-        if let Some(messages_container) = document.get_element_by_id("messages") {
-            let message_div = document.create_element("div").unwrap();
-            message_div.set_class_name("error-message");
-            message_div.set_inner_html(&format!("❌ Error: {}", message));
-            
-            messages_container.append_child(&message_div).unwrap();
-            messages_container.set_scroll_top(messages_container.scroll_height());
-        }
-    }
+use console_log;
 
-    fn format_timestamp(timestamp: &str) -> String {
-        // Simple timestamp formatting - just use current time
-        let date = Date::new_0();
-        let time = date.to_time_string().as_string().unwrap_or_default();
-        time
-    }
+fn format_timestamp(timestamp: &str) -> String {
+    // For now, return as-is. In the future, we can format this better
+    timestamp.to_string()
 }
 
 // Initialize the WASM module

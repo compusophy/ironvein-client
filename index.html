@@ -3,292 +3,397 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>IronVein Chat</title>
+    <title>🎮 IronVein MMO RTS</title>
     <style>
         * {
             margin: 0;
             padding: 0;
             box-sizing: border-box;
         }
-        
+
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            height: 100vh;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            color: #333;
+            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+            color: white;
+            min-height: 100vh;
+            overflow-x: hidden;
         }
 
-        .chat-container {
-            background: white;
-            border-radius: 20px;
-            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
-            width: 100%;
-            max-width: 800px;
-            height: 90vh;
+        .game-container {
+            display: grid;
+            grid-template-columns: 1fr 300px;
+            grid-template-rows: 60px 1fr;
+            height: 100vh;
+            gap: 10px;
+            padding: 10px;
+        }
+
+        .header {
+            grid-column: 1 / -1;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            border-radius: 15px;
+            padding: 0 20px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+
+        .logo {
+            font-size: 24px;
+            font-weight: bold;
+            background: linear-gradient(45deg, #4ecdc4, #44a08d);
+            background-clip: text;
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            color: transparent;
+        }
+
+        .user-info {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            font-size: 14px;
+        }
+
+        .status-indicator {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #4ecdc4;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.3; }
+        }
+
+        .game-area {
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(10px);
+            border-radius: 15px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            padding: 20px;
             display: flex;
             flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            position: relative;
             overflow: hidden;
         }
 
-        .chat-header {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            padding: 20px;
-            text-align: center;
-            border-radius: 20px 20px 0 0;
+        .game-canvas {
+            border: 2px solid #4ecdc4;
+            border-radius: 10px;
+            background: #000;
+            box-shadow: 0 0 20px rgba(78, 205, 196, 0.3);
+            cursor: crosshair;
         }
 
-        .chat-header h1 {
-            margin: 0;
-            font-size: 1.8em;
-            font-weight: 300;
+        .game-controls {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            background: rgba(0, 0, 0, 0.8);
+            border-radius: 10px;
+            padding: 15px;
+            font-size: 12px;
+            max-width: 200px;
         }
 
-        .connection-status {
-            margin-top: 10px;
-            padding: 8px 16px;
-            border-radius: 20px;
-            background: rgba(255,255,255,0.2);
-            font-size: 0.9em;
-            display: inline-block;
+        .game-controls h3 {
+            color: #4ecdc4;
+            margin-bottom: 10px;
+            font-size: 14px;
         }
 
-        .join-form {
-            padding: 20px;
-            background: #f8f9fa;
-            border-bottom: 1px solid #e9ecef;
+        .game-controls ul {
+            list-style: none;
+            line-height: 1.6;
         }
 
-        .form-row {
+        .game-controls li {
+            margin-bottom: 5px;
+        }
+
+        .position-info {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            background: rgba(0, 0, 0, 0.8);
+            border-radius: 10px;
+            padding: 10px 15px;
+            font-size: 12px;
+            font-family: 'Courier New', monospace;
+        }
+
+        .sidebar {
             display: flex;
-            gap: 15px;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .panel {
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(10px);
+            border-radius: 15px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            padding: 20px;
+            flex: 1;
+        }
+
+        .panel h2 {
+            font-size: 18px;
+            margin-bottom: 15px;
+            color: #4ecdc4;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .chat-messages {
+            height: 200px;
+            overflow-y: auto;
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 10px;
+            padding: 10px;
+            margin-bottom: 10px;
+            font-size: 12px;
+            line-height: 1.4;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .chat-messages::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        .chat-messages::-webkit-scrollbar-track {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 3px;
+        }
+
+        .chat-messages::-webkit-scrollbar-thumb {
+            background: #4ecdc4;
+            border-radius: 3px;
+        }
+
+        .chat-input-container {
+            display: flex;
+            gap: 10px;
+        }
+
+        .chat-input {
+            flex: 1;
+            padding: 8px 12px;
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            border-radius: 20px;
+            background: rgba(255, 255, 255, 0.1);
+            color: white;
+            font-size: 12px;
+            outline: none;
+            transition: border-color 0.3s ease;
+        }
+
+        .chat-input::placeholder {
+            color: rgba(255, 255, 255, 0.6);
+        }
+
+        .chat-input:focus {
+            border-color: #4ecdc4;
+        }
+
+        .send-btn {
+            padding: 8px 15px;
+            background: linear-gradient(45deg, #4ecdc4, #44a08d);
+            border: none;
+            border-radius: 20px;
+            color: white;
+            font-size: 12px;
+            cursor: pointer;
+            transition: transform 0.2s ease;
+        }
+
+        .send-btn:hover {
+            transform: translateY(-2px);
+        }
+
+        .setup-form {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 10px;
+            padding: 15px;
             margin-bottom: 15px;
         }
 
         .form-group {
-            flex: 1;
+            margin-bottom: 10px;
         }
 
         .form-group label {
             display: block;
             margin-bottom: 5px;
-            font-weight: 600;
-            color: #555;
+            font-size: 12px;
+            color: #4ecdc4;
         }
 
         .form-group input {
             width: 100%;
-            padding: 12px;
-            border: 2px solid #e9ecef;
-            border-radius: 10px;
-            font-size: 14px;
-            transition: border-color 0.3s;
+            padding: 8px 12px;
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            border-radius: 8px;
+            background: rgba(255, 255, 255, 0.1);
+            color: white;
+            font-size: 12px;
+            outline: none;
+        }
+
+        .form-group input::placeholder {
+            color: rgba(255, 255, 255, 0.6);
         }
 
         .form-group input:focus {
-            outline: none;
-            border-color: #667eea;
+            border-color: #4ecdc4;
         }
 
-        .btn {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
+        .connect-btn {
+            width: 100%;
+            padding: 10px;
+            background: linear-gradient(45deg, #4ecdc4, #44a08d);
             border: none;
-            padding: 12px 24px;
-            border-radius: 10px;
-            cursor: pointer;
+            border-radius: 8px;
+            color: white;
             font-size: 14px;
-            font-weight: 600;
-            transition: transform 0.2s;
+            font-weight: bold;
+            cursor: pointer;
+            transition: transform 0.2s ease;
         }
 
-        .btn:hover {
+        .connect-btn:hover {
             transform: translateY(-2px);
         }
 
-        .btn:disabled {
-            opacity: 0.6;
-            cursor: not-allowed;
-            transform: none;
+        .stats {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            margin-bottom: 15px;
         }
 
-        .messages-container {
-            flex: 1;
-            padding: 20px;
-            overflow-y: auto;
-            background: #f8f9fa;
-        }
-
-        .messages {
-            display: flex;
-            flex-direction: column;
-            gap: 15px;
-        }
-
-        .message {
-            background: white;
-            padding: 15px;
-            border-radius: 15px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
-            animation: slideIn 0.3s ease-out;
-        }
-
-        .message .timestamp {
-            color: #999;
-            font-size: 0.8em;
-            margin-right: 10px;
-        }
-
-        .message .username {
-            font-weight: 600;
-            color: #667eea;
-            margin-right: 10px;
-        }
-
-        .message .text {
-            color: #333;
-            word-wrap: break-word;
-        }
-
-        .system-message {
-            background: linear-gradient(135deg, #ffeaa7 0%, #fdcb6e 100%);
-            color: #2d3436;
-            padding: 10px 15px;
-            border-radius: 15px;
+        .stat-item {
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 8px;
+            padding: 10px;
             text-align: center;
-            font-size: 0.9em;
-            animation: slideIn 0.3s ease-out;
+            border: 1px solid rgba(255, 255, 255, 0.1);
         }
 
-        .error-message {
-            background: linear-gradient(135deg, #fd79a8 0%, #e84393 100%);
-            color: white;
-            padding: 10px 15px;
-            border-radius: 15px;
-            text-align: center;
-            font-size: 0.9em;
-            animation: slideIn 0.3s ease-out;
+        .stat-value {
+            font-size: 16px;
+            font-weight: bold;
+            color: #4ecdc4;
         }
 
-        .message-input-container {
-            padding: 20px;
-            background: white;
-            border-top: 1px solid #e9ecef;
-            border-radius: 0 0 20px 20px;
-        }
-
-        .message-input-form {
-            display: flex;
-            gap: 15px;
-        }
-
-        .message-input {
-            flex: 1;
-            padding: 15px;
-            border: 2px solid #e9ecef;
-            border-radius: 25px;
-            font-size: 14px;
-            transition: border-color 0.3s;
-        }
-
-        .message-input:focus {
-            outline: none;
-            border-color: #667eea;
-        }
-
-        .send-btn {
-            padding: 15px 25px;
-            border-radius: 25px;
-            background: linear-gradient(135deg, #00b894 0%, #55a3ff 100%);
-        }
-
-        @keyframes slideIn {
-            from {
-                opacity: 0;
-                transform: translateY(20px);
-            }
-            to {
-                opacity: 1;
-                transform: translateY(0);
-            }
+        .stat-label {
+            font-size: 10px;
+            margin-top: 2px;
+            opacity: 0.8;
         }
 
         .hidden {
             display: none !important;
         }
 
-        .connected {
-            background: rgba(0, 184, 148, 0.2) !important;
-        }
-
-        .disconnected {
-            background: rgba(253, 121, 168, 0.2) !important;
-        }
-
-        @media (max-width: 600px) {
-            .chat-container {
-                margin: 10px;
-                height: calc(100vh - 20px);
-                border-radius: 15px;
+        @media (max-width: 768px) {
+            .game-container {
+                grid-template-columns: 1fr;
+                grid-template-rows: 60px 1fr 250px;
             }
             
-            .form-row {
-                flex-direction: column;
-                gap: 10px;
+            .game-controls {
+                position: static;
+                margin-bottom: 10px;
+                max-width: none;
             }
         }
     </style>
 </head>
 <body>
-    <div class="chat-container">
-        <div class="chat-header">
-            <h1>💬 IronVein Chat</h1>
-            <div id="connectionStatus" class="connection-status disconnected">
-                Connecting...
+    <div class="game-container">
+        <!-- Header -->
+        <header class="header">
+            <div class="logo">⚔️ IronVein MMO RTS</div>
+            <div class="user-info">
+                <div class="status-indicator"></div>
+                <span id="userDisplay">Not Connected</span>
+                <span id="roomDisplay">No Room</span>
             </div>
-        </div>
+        </header>
 
-        <div id="joinForm" class="join-form">
-            <div class="form-row">
-                <div class="form-group">
-                    <label for="username">Username:</label>
-                    <input type="text" id="username" placeholder="Enter your username" value="User">
-                </div>
-                <div class="form-group">
-                    <label for="room">Room:</label>
-                    <input type="text" id="room" placeholder="Enter room name" value="general">
-                </div>
-                <div class="form-group" style="display: flex; align-items: end;">
-                    <button id="connectBtn" class="btn">Join Chat</button>
+        <!-- Game Area -->
+        <main class="game-area">
+            <div class="game-controls">
+                <h3>🎮 Controls</h3>
+                <ul>
+                    <li><strong>Left Click:</strong> Move to position</li>
+                    <li><strong>Mouse Wheel:</strong> Zoom (coming soon)</li>
+                    <li><strong>WASD:</strong> Pan camera (coming soon)</li>
+                </ul>
+            </div>
+
+            <canvas id="gameCanvas" class="game-canvas" width="640" height="640"></canvas>
+
+            <div class="position-info">
+                <div>Position: <span id="positionDisplay">Not Set</span></div>
+                <div>Grid: <span id="gridInfo">64x64</span></div>
+            </div>
+        </main>
+
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <!-- Setup Panel -->
+            <div class="panel" id="setupPanel">
+                <h2>🎯 Join Game</h2>
+                <div class="setup-form">
+                    <div class="form-group">
+                        <label for="usernameInput">Username:</label>
+                        <input type="text" id="usernameInput" placeholder="Enter your battle name" maxlength="20">
+                    </div>
+                    <div class="form-group">
+                        <label for="roomInput">Room:</label>
+                        <input type="text" id="roomInput" value="general" placeholder="battlefield1">
+                    </div>
+                    <button class="connect-btn" onclick="connectToGame()">⚔️ Enter Battle</button>
                 </div>
             </div>
-        </div>
 
-        <div class="messages-container">
-            <div id="messages" class="messages">
-                <div class="system-message">
-                    🚀 Welcome to IronVein Chat! Enter your username and join a room to start chatting.
+            <!-- Stats Panel -->
+            <div class="panel hidden" id="statsPanel">
+                <h2>📊 Battle Stats</h2>
+                <div class="stats">
+                    <div class="stat-item">
+                        <div class="stat-value" id="healthStat">100</div>
+                        <div class="stat-label">Health</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-value" id="resourcesStat">0</div>
+                        <div class="stat-label">Resources</div>
+                    </div>
                 </div>
             </div>
-        </div>
 
-        <div id="messageInputContainer" class="message-input-container hidden">
-            <form id="messageForm" class="message-input-form">
-                <input 
-                    type="text" 
-                    id="messageInput" 
-                    class="message-input" 
-                    placeholder="Type your message..."
-                    autocomplete="off"
-                >
-                <button type="submit" class="btn send-btn">Send</button>
-            </form>
-        </div>
+            <!-- Chat Panel -->
+            <div class="panel">
+                <h2>💬 Command Chat</h2>
+                <div class="chat-messages" id="chatMessages"></div>
+                <div class="chat-input-container">
+                    <input type="text" id="chatInput" class="chat-input" placeholder="Type your message..." maxlength="500">
+                    <button class="send-btn" onclick="sendMessage()">Send</button>
+                </div>
+            </div>
+        </aside>
     </div>
 
-    <script type="module" src="/main.js"></script>
+    <script type="module" src="./main.js"></script>
 </body>
 </html> 

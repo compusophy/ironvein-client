@@ -29,4 +29,8 @@ features = [
   "Location",
   "EventTarget",
   "CloseEvent",
+  "MouseEvent",
+  "HtmlCanvasElement",
+  "CanvasRenderingContext2d",
+  "DomRect",
 ]

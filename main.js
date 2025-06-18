@@ -1,131 +1,212 @@
-import init, { ChatClient } from './pkg/client.js';
+import init, { IronVeinClient } from './pkg/client.js';
 
-let chatClient = null;
+let gameClient = null;
+let connected = false;
 
-async function initWasm() {
+async function run() {
+    // Initialize the WASM module
+    await init();
+    console.log('🚀 IronVein Chat WASM module loaded successfully!');
+    
+    // Create client instance
+    gameClient = new IronVeinClient();
+    
+    // Set up event listeners
+    setupEventListeners();
+    
+    // Initialize UI
+    updateUI();
+}
+
+function setupEventListeners() {
+    // Enter key in username/room inputs
+    document.getElementById('usernameInput').addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') {
+            connectToGame();
+        }
+    });
+    
+    document.getElementById('roomInput').addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') {
+            connectToGame();
+        }
+    });
+    
+    // Enter key in chat input
+    document.getElementById('chatInput').addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') {
+            sendMessage();
+        }
+    });
+    
+    // Auto-update position display
+    setInterval(updatePositionDisplay, 1000);
+}
+
+window.connectToGame = async function() {
+    const usernameInput = document.getElementById('usernameInput');
+    const roomInput = document.getElementById('roomInput');
+    const username = usernameInput.value.trim();
+    const room = roomInput.value.trim();
+    
+    if (!username) {
+        alert('Please enter a username!');
+        usernameInput.focus();
+        return;
+    }
+    
+    if (!room) {
+        alert('Please enter a room name!');
+        roomInput.focus();
+        return;
+    }
+    
     try {
-        await init();
-        chatClient = new ChatClient();
-        updateConnectionStatus('🔄 Ready to connect', 'disconnected');
-        console.log('🚀 IronVein Chat WASM module loaded successfully!');
+        // Set user info
+        gameClient.set_user_info(username, room);
+        
+        // Setup game canvas
+        await gameClient.setup_game_canvas('gameCanvas');
+        
+        // Connect to server
+        await gameClient.connect();
+        
+        // Update UI
+        connected = true;
+        updateUI();
+        updateUserDisplay(username, room);
+        
+        // Show success message
+        appendChatMessage('🎮 Connected to IronVein MMO RTS! Click on the grid to move your unit.');
+        appendChatMessage('💬 Use the chat to coordinate with other players.');
+        
     } catch (error) {
-        console.error('Failed to load WASM:', error);
-        updateConnectionStatus('❌ Failed to load WASM', 'disconnected');
+        console.error('Connection failed:', error);
+        appendChatMessage(`❌ Connection failed: ${error}`);
+    }
+};
+
+window.sendMessage = function() {
+    if (!connected || !gameClient) {
+        appendChatMessage('❌ Not connected to game server');
+        return;
+    }
+    
+    const chatInput = document.getElementById('chatInput');
+    const message = chatInput.value.trim();
+    
+    if (!message) {
+        return;
+    }
+    
+    try {
+        gameClient.send_message(message);
+        chatInput.value = '';
+        
+        // Add our own message to chat (it will also come back from server)
+        appendChatMessage(`[YOU] ${message}`);
+        
+    } catch (error) {
+        console.error('Failed to send message:', error);
+        appendChatMessage(`❌ Failed to send message: ${error}`);
+    }
+};
+
+function appendChatMessage(message) {
+    const chatMessages = document.getElementById('chatMessages');
+    const messageDiv = document.createElement('div');
+    
+    // Add timestamp
+    const timestamp = new Date().toLocaleTimeString();
+    messageDiv.textContent = `[${timestamp}] ${message}`;
+    
+    chatMessages.appendChild(messageDiv);
+    
+    // Auto-scroll to bottom
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+    
+    // Limit message history to last 100 messages
+    while (chatMessages.children.length > 100) {
+        chatMessages.removeChild(chatMessages.firstChild);
     }
 }
 
-function updateConnectionStatus(message, status) {
-    const statusElement = document.getElementById('connectionStatus');
-    statusElement.textContent = message;
-    statusElement.className = `connection-status ${status}`;
+function updateUI() {
+    const setupPanel = document.getElementById('setupPanel');
+    const statsPanel = document.getElementById('statsPanel');
+    const chatInput = document.getElementById('chatInput');
+    
+    if (connected) {
+        setupPanel.classList.add('hidden');
+        statsPanel.classList.remove('hidden');
+        chatInput.disabled = false;
+        chatInput.placeholder = 'Type your message...';
+    } else {
+        setupPanel.classList.remove('hidden');
+        statsPanel.classList.add('hidden');
+        chatInput.disabled = true;
+        chatInput.placeholder = 'Connect to chat...';
+    }
 }
 
-function addSystemMessage(message) {
-    const messagesContainer = document.getElementById('messages');
-    const messageDiv = document.createElement('div');
-    messageDiv.className = 'system-message';
-    messageDiv.textContent = message;
-    messagesContainer.appendChild(messageDiv);
-    scrollToBottom();
+function updateUserDisplay(username, room) {
+    document.getElementById('userDisplay').textContent = username;
+    document.getElementById('roomDisplay').textContent = `Room: ${room}`;
 }
 
-function scrollToBottom() {
-    const messagesContainer = document.querySelector('.messages-container');
-    messagesContainer.scrollTop = messagesContainer.scrollHeight;
+function updatePositionDisplay() {
+    if (!connected || !gameClient) {
+        return;
+    }
+    
+    try {
+        const position = gameClient.get_my_position();
+        if (position) {
+            const x = position[0];
+            const y = position[1];
+            document.getElementById('positionDisplay').textContent = `(${x}, ${y})`;
+            
+            // Update stats (placeholder for now)
+            document.getElementById('healthStat').textContent = '100';
+            document.getElementById('resourcesStat').textContent = '0';
+        }
+    } catch (error) {
+        console.error('Failed to get position:', error);
+    }
 }
 
-// Event handlers
-document.addEventListener('DOMContentLoaded', () => {
-    initWasm();
+// Add some helper functions for the game
+function updateGameStats(health, resources) {
+    document.getElementById('healthStat').textContent = health;
+    document.getElementById('resourcesStat').textContent = resources;
+}
 
-    // Connect button handler
-    const connectBtn = document.getElementById('connectBtn');
-    const joinForm = document.getElementById('joinForm');
-    const messageInputContainer = document.getElementById('messageInputContainer');
-    const usernameInput = document.getElementById('username');
-    const roomInput = document.getElementById('room');
-
-    connectBtn.addEventListener('click', async () => {
-        const username = usernameInput.value.trim();
-        const room = roomInput.value.trim();
-
-        if (!username || !room) {
-            addSystemMessage('❌ Please enter both username and room name');
-            return;
+// Handle page visibility for performance
+document.addEventListener('visibilitychange', () => {
+    if (document.hidden) {
+        // Game is hidden, could pause updates
+    } else {
+        // Game is visible, resume updates
+        if (connected && gameClient) {
+            gameClient.render_game();
         }
-
-        if (!chatClient) {
-            addSystemMessage('❌ Chat client not initialized');
-            return;
-        }
-
-        try {
-            // Set user info
-            chatClient.set_user_info(username, room);
-            
-            // Update UI
-            connectBtn.disabled = true;
-            connectBtn.textContent = 'Connecting...';
-            updateConnectionStatus('🔄 Connecting...', 'disconnected');
-
-            // Connect to WebSocket
-            await chatClient.connect();
-            
-            // Join the room
-            await chatClient.join_room();
-
-            // Update UI for connected state
-            joinForm.classList.add('hidden');
-            messageInputContainer.classList.remove('hidden');
-            updateConnectionStatus(`✅ Connected as ${username} in #${room}`, 'connected');
-            
-            addSystemMessage(`🎉 Connected to room #${room} as ${username}`);
-            addSystemMessage(`🔗 ${chatClient.get_server_info()}`);
-
-        } catch (error) {
-            console.error('Connection failed:', error);
-            addSystemMessage(`❌ Connection failed: ${error}`);
-            connectBtn.disabled = false;
-            connectBtn.textContent = 'Join Chat';
-            updateConnectionStatus('❌ Connection failed', 'disconnected');
-        }
-    });
-
-    // Message form handler
-    const messageForm = document.getElementById('messageForm');
-    const messageInput = document.getElementById('messageInput');
-
-    messageForm.addEventListener('submit', async (e) => {
-        e.preventDefault();
-        
-        const message = messageInput.value.trim();
-        if (!message || !chatClient) return;
-
-        try {
-            await chatClient.send_message(message);
-            messageInput.value = '';
-        } catch (error) {
-            console.error('Failed to send message:', error);
-            addSystemMessage(`❌ Failed to send message: ${error}`);
-        }
-    });
-
-    // Enter key to connect when in username/room inputs
-    [usernameInput, roomInput].forEach(input => {
-        input.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') {
-                connectBtn.click();
-            }
-        });
-    });
-
-    // Auto-focus username input
-    usernameInput.focus();
+    }
 });
 
-// Handle page unload - disconnect gracefully
-window.addEventListener('beforeunload', () => {
-    if (chatClient && chatClient.is_connected()) {
-        chatClient.disconnect();
+// Handle window resize
+window.addEventListener('resize', () => {
+    if (connected && gameClient) {
+        // Re-render game on resize
+        setTimeout(() => {
+            gameClient.render_game();
+        }, 100);
     }
-}); 
+});
+
+// Initialize the application
+run().catch(console.error);
+
+// Export functions for debugging
+window.gameClient = gameClient;
+window.appendChatMessage = appendChatMessage;
+window.updateGameStats = updateGameStats; 
