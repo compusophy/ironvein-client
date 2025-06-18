@@ -135,9 +135,13 @@ window.sendMessage = function() {
 function appendChatMessage(message) {
     const chatMessages = document.getElementById('chatMessages');
     
-    // Remove any pending messages first
+    // Remove any pending messages first - THIS WAS NOT WORKING!
     const pendingMessages = chatMessages.querySelectorAll('[data-pending="true"]');
-    pendingMessages.forEach(msg => msg.remove());
+    console.log('Removing', pendingMessages.length, 'pending messages');
+    pendingMessages.forEach(msg => {
+        console.log('Removing pending message:', msg.textContent);
+        msg.remove();
+    });
     
     const messageDiv = document.createElement('div');
     
