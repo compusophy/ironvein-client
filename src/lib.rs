@@ -32,62 +32,7 @@ struct Player {
     resources: u32,
 }
 
-#[derive(Debug, Clone)]
-struct GameMap {
-    grid: [[CellType; GRID_SIZE as usize]; GRID_SIZE as usize],
-    width: u32,
-    height: u32,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-enum CellType {
-    Empty,
-    Player(u32), // Player ID
-    Resource,
-    Obstacle,
-}
-
-impl Default for CellType {
-    fn default() -> Self {
-        CellType::Empty
-    }
-}
-
-impl GameMap {
-    fn new() -> Self {
-        Self {
-            grid: [[CellType::Empty; GRID_SIZE as usize]; GRID_SIZE as usize],
-            width: GRID_SIZE,
-            height: GRID_SIZE,
-        }
-    }
-
-    fn is_valid_position(&self, x: u32, y: u32) -> bool {
-        x < self.width && y < self.height
-    }
-
-    fn is_empty(&self, x: u32, y: u32) -> bool {
-        if !self.is_valid_position(x, y) {
-            return false;
-        }
-        self.grid[y as usize][x as usize] == CellType::Empty
-    }
-
-    fn place_player(&mut self, x: u32, y: u32, player_id: u32) -> bool {
-        if self.is_empty(x, y) {
-            self.grid[y as usize][x as usize] = CellType::Player(player_id);
-            true
-        } else {
-            false
-        }
-    }
-
-    fn remove_player(&mut self, x: u32, y: u32) {
-        if self.is_valid_position(x, y) {
-            self.grid[y as usize][x as usize] = CellType::Empty;
-        }
-    }
-}
+// Game map functionality removed for simplicity - using server-side state only
 
 // WebSocket message types (expanded for game)
 #[derive(Serialize, Deserialize, Debug)]
@@ -144,7 +89,6 @@ pub struct IronVeinClient {
     room: String,
     websocket: Option<WebSocket>,
     // Game state
-    game_map: GameMap,
     players: HashMap<String, Player>,
     my_player: Option<Player>,
     canvas: Option<HtmlCanvasElement>,
@@ -160,7 +104,6 @@ impl IronVeinClient {
             username: String::new(),
             room: String::new(),
             websocket: None,
-            game_map: GameMap::new(),
             players: HashMap::new(),
             my_player: None,
             canvas: None,
@@ -259,7 +202,7 @@ impl IronVeinClient {
     }
 
     fn draw_grid(&self, context: &CanvasRenderingContext2d) -> Result<(), JsValue> {
-        context.set_stroke_style(&"#333333".into());
+        let _ = context.set_stroke_style(&"#333333".into());
         context.set_line_width(0.5);
         
         // Draw vertical lines
@@ -284,7 +227,7 @@ impl IronVeinClient {
     }
 
     fn draw_players(&self, context: &CanvasRenderingContext2d) -> Result<(), JsValue> {
-        context.set_fill_style(&"#ff6b6b".into()); // Red for other players
+        let _ = context.set_fill_style(&"#ff6b6b".into()); // Red for other players
         
         for player in self.players.values() {
             if Some(&player.username) != self.my_player.as_ref().map(|p| &p.username) {
@@ -295,10 +238,10 @@ impl IronVeinClient {
                 context.fill_rect(px, py, size, size);
                 
                 // Draw username
-                context.set_fill_style(&"#000000".into());
+                let _ = context.set_fill_style(&"#000000".into());
                 context.set_font("8px Arial");
                 context.fill_text(&player.username, px, py - 2.0)?;
-                context.set_fill_style(&"#ff6b6b".into());
+                let _ = context.set_fill_style(&"#ff6b6b".into());
             }
         }
         
@@ -306,7 +249,7 @@ impl IronVeinClient {
     }
 
     fn draw_my_player(&self, context: &CanvasRenderingContext2d, player: &Player) -> Result<(), JsValue> {
-        context.set_fill_style(&"#4ecdc4".into()); // Teal for my player
+        let _ = context.set_fill_style(&"#4ecdc4".into()); // Teal for my player
         
         let px = (player.x * CELL_SIZE) as f64 + 2.0;
         let py = (player.y * CELL_SIZE) as f64 + 2.0;
@@ -315,12 +258,12 @@ impl IronVeinClient {
         context.fill_rect(px, py, size, size);
         
         // Draw border to highlight
-        context.set_stroke_style(&"#ffffff".into());
+        let _ = context.set_stroke_style(&"#ffffff".into());
         context.set_line_width(2.0);
         context.stroke_rect(px, py, size, size);
         
         // Draw username
-        context.set_fill_style(&"#000000".into());
+        let _ = context.set_fill_style(&"#000000".into());
         context.set_font("8px Arial");
         context.fill_text(&format!("{} (YOU)", player.username), px, py - 2.0)?;
         
@@ -427,10 +370,6 @@ impl IronVeinClient {
         onopen_callback.forget();
 
         // Handle incoming messages
-        let players_clone = self.players.clone();
-        let my_player_clone2 = self.my_player.clone();
-        let canvas_clone = self.canvas.clone();
-        let context_clone = self.context.clone();
         
         let onmessage_callback = Closure::wrap(Box::new(move |event: MessageEvent| {
             if let Ok(message_text) = event.data().dyn_into::<js_sys::JsString>() {
@@ -439,15 +378,10 @@ impl IronVeinClient {
                 // Try to parse as different message types
                 if let Ok(ws_message) = serde_json::from_str::<WebSocketMessage>(&message_str) {
                     match ws_message {
-                        WebSocketMessage::PlayerUpdate { username, x, y, health, resources } => {
+                        WebSocketMessage::PlayerUpdate { username, x, y, health: _, resources: _ } => {
                             console_log!("🎮 Player {} moved to ({}, {})", username, x, y);
                             
                             // Update player in HashMap - THIS WAS MISSING!
-                            let player = Player {
-                                username: username.clone(),
-                                x, y, health, resources,
-                                room: "general".to_string(), // TODO: get from current room
-                            };
                             
                             // Note: We can't directly modify self.players from this closure
                             // So we'll trigger a re-render through DOM events
@@ -622,10 +556,7 @@ macro_rules! console_log {
 
 use console_log;
 
-fn format_timestamp(timestamp: &str) -> String {
-    // For now, return as-is. In the future, we can format this better
-    timestamp.to_string()
-}
+// Timestamp formatting removed - using raw timestamps from server
 
 // Initialize the WASM module
 #[wasm_bindgen(start)]

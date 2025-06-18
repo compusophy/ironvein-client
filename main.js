@@ -134,8 +134,7 @@ window.sendMessage = function() {
         gameClient.send_message(message);
         chatInput.value = '';
         
-        // Add our own message to chat (it will also come back from server)
-        appendChatMessage(`[YOU] ${message}`);
+        // Don't add local message - let server handle all chat display
         
     } catch (error) {
         console.error('Failed to send message:', error);
