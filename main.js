@@ -3,6 +3,8 @@ import init, { IronVeinClient } from './pkg/client.js';
 let gameClient = null;
 let connected = false;
 let pendingMessages = new Map(); // Track pending messages to remove when server responds
+let pingStartTime = 0;
+let currentPing = 0;
 
 async function run() {
     // Initialize the WASM module
@@ -42,6 +44,9 @@ function setupEventListeners() {
     
     // Auto-update position display
     setInterval(updatePositionDisplay, 1000);
+    
+    // Auto-update ping display
+    setInterval(sendPing, 2000); // Send ping every 2 seconds
     
     // Expose gameClient globally for WASM callbacks
     window.gameClient = gameClient;
@@ -115,7 +120,7 @@ window.sendMessage = function() {
         chatInput.value = '';
         
         // Show "SENDING..." that will disappear when server responds
-        const timestamp = new Date().toLocaleTimeString();
+        const timestamp = formatMilitaryTime(new Date());
         const myUsername = document.getElementById('userDisplay').textContent;
         const sendingDiv = addSendingMessage(`[${timestamp}] ${myUsername}: ${message}`, message);
         
@@ -147,10 +152,11 @@ function appendChatMessage(message) {
     const chatMessages = document.getElementById('chatMessages');
     
     // Check if this is our own message - remove pending version
-    const serverMatch = message.match(/^\[.*?\]\s+(.+?):\s+(.+)$/);
+    const serverMatch = message.match(/^\[(\d{2}:\d{2}:\d{2}\.\d{2})\]\s+(.+?):\s+(.+)$/);
     if (serverMatch) {
-        const username = serverMatch[1];
-        const messageContent = serverMatch[2].toLowerCase().trim();
+        const timestamp = serverMatch[1];
+        const username = serverMatch[2];
+        const messageContent = serverMatch[3].toLowerCase().trim();
         const myUsername = document.getElementById('userDisplay').textContent;
         
         if (username === myUsername && pendingMessages.has(messageContent)) {
@@ -248,6 +254,45 @@ window.addEventListener('resize', () => {
         }, 100);
     }
 });
+
+function formatMilitaryTime(date) {
+    const hours = String(date.getUTCHours()).padStart(2, '0');
+    const minutes = String(date.getUTCMinutes()).padStart(2, '0');
+    const seconds = String(date.getUTCSeconds()).padStart(2, '0');
+    const milliseconds = String(Math.floor(date.getUTCMilliseconds() / 10)).padStart(2, '0');
+    return `${hours}:${minutes}:${seconds}.${milliseconds}`;
+}
+
+function sendPing() {
+    if (!connected || !gameClient) return;
+    
+    pingStartTime = performance.now();
+    // We can repurpose a message for ping - or we can track WebSocket response time
+    // For now, let's track WebSocket roundtrip by sending a small message
+    try {
+        gameClient.send_message('__ping__');
+    } catch (error) {
+        console.error('Failed to send ping:', error);
+    }
+}
+
+function updatePingDisplay(ping) {
+    const pingDisplay = document.getElementById('pingDisplay');
+    if (!pingDisplay) return;
+    
+    currentPing = ping;
+    pingDisplay.textContent = `Ping: ${ping}ms`;
+    
+    // Update ping color based on latency
+    pingDisplay.classList.remove('ping-good', 'ping-ok', 'ping-bad');
+    if (ping < 50) {
+        pingDisplay.classList.add('ping-good');
+    } else if (ping < 150) {
+        pingDisplay.classList.add('ping-ok');
+    } else {
+        pingDisplay.classList.add('ping-bad');
+    }
+}
 
 // Initialize the application
 run().catch(console.error);

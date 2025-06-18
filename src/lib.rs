@@ -3,6 +3,7 @@ use wasm_bindgen::JsCast;
 use web_sys::{console, WebSocket, MessageEvent, Event, ErrorEvent, MouseEvent, HtmlCanvasElement, CanvasRenderingContext2d};
 use serde::{Serialize, Deserialize};
 use std::collections::HashMap;
+use chrono::{DateTime, Utc, Timelike};
 
 // Import the `console.log` function from the Web API
 #[wasm_bindgen]
@@ -421,8 +422,9 @@ impl IronVeinClient {
                             }
                         }
                         WebSocketMessage::ChatMessage(chat_msg) => {
-                            // Handle chat messages properly - THIS WAS BROKEN!
-                            append_message(&format!("[{}] {}: {}", chat_msg.timestamp, chat_msg.username, chat_msg.message));
+                            // Handle chat messages properly - use JS timestamp formatting
+                            let formatted_timestamp = format_timestamp(&chat_msg.timestamp);
+                            append_message(&format!("[{}] {}: {}", formatted_timestamp, chat_msg.username, chat_msg.message));
                         }
                         WebSocketMessage::PlayerJoined { username, x, y } => {
                             console_log!("🟢 Player {} joined at ({}, {})", username, x, y);
@@ -570,6 +572,28 @@ impl IronVeinClient {
 
 // Helper functions
 fn append_message(message: &str) {
+    // Check if this is a ping message
+    if message.contains("__ping__") {
+        // Calculate ping and update display
+        let window = web_sys::window().unwrap();
+        if let Ok(ping_start) = js_sys::Reflect::get(&window, &"pingStartTime".into()) {
+            if let Some(start_time) = ping_start.as_f64() {
+                let current_time = window.performance().unwrap().now();
+                let ping = ((current_time - start_time) as i32).max(0);
+                
+                // Call updatePingDisplay function
+                if let Ok(update_ping_fn) = js_sys::Reflect::get(&window, &"updatePingDisplay".into()) {
+                    if let Ok(func) = update_ping_fn.dyn_into::<js_sys::Function>() {
+                        let args = js_sys::Array::new();
+                        args.push(&(ping as f64).into());
+                        let _ = func.apply(&window, &args);
+                    }
+                }
+            }
+        }
+        return; // Don't display ping messages in chat
+    }
+    
     // Call JavaScript appendChatMessage function for proper duplicate handling
     let window = web_sys::window().unwrap();
     if let Ok(append_fn) = js_sys::Reflect::get(&window, &"appendChatMessage".into()) {
@@ -578,6 +602,35 @@ fn append_message(message: &str) {
             args.push(&message.into());
             let _ = func.apply(&window, &args);
         }
+    }
+}
+
+fn format_timestamp(timestamp_str: &str) -> String {
+    // Parse the timestamp and convert to military time format
+    if let Ok(parsed) = chrono::DateTime::parse_from_rfc3339(timestamp_str) {
+        let utc_time = parsed.with_timezone(&chrono::Utc);
+        format!("{:02}:{:02}:{:02}.{:02}", 
+            utc_time.hour(), 
+            utc_time.minute(), 
+            utc_time.second(),
+            utc_time.nanosecond() / 10_000_000  // Convert to centiseconds
+        )
+    } else {
+        // Fallback to using JavaScript formatting
+        let window = web_sys::window().unwrap();
+        if let Ok(format_fn) = js_sys::Reflect::get(&window, &"formatMilitaryTime".into()) {
+            if let Ok(func) = format_fn.dyn_into::<js_sys::Function>() {
+                let date = js_sys::Date::new_0();
+                let args = js_sys::Array::new();
+                args.push(&date);
+                if let Ok(result) = func.apply(&window, &args) {
+                    if let Some(formatted) = result.as_string() {
+                        return formatted;
+                    }
+                }
+            }
+        }
+        timestamp_str.to_string() // Final fallback
     }
 }
 

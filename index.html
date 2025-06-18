@@ -57,6 +57,20 @@
             font-size: 14px;
         }
 
+        .ping-display {
+            background: rgba(0, 0, 0, 0.4);
+            padding: 4px 8px;
+            border-radius: 12px;
+            font-size: 11px;
+            color: #4ecdc4;
+            border: 1px solid rgba(76, 205, 196, 0.3);
+            font-weight: bold;
+        }
+
+        .ping-good { color: #4ecdc4; }
+        .ping-ok { color: #f39c12; }
+        .ping-bad { color: #e74c3c; }
+
         .status-indicator {
             width: 8px;
             height: 8px;
@@ -324,6 +338,7 @@
         <header class="header">
             <div class="logo">⚔️ IronVein MMO RTS</div>
             <div class="user-info">
+                <div class="ping-display" id="pingDisplay">Ping: --ms</div>
                 <div class="status-indicator"></div>
                 <span id="userDisplay">Not Connected</span>
                 <span id="roomDisplay">No Room</span>
