@@ -42,29 +42,8 @@ function setupEventListeners() {
     // Auto-update position display
     setInterval(updatePositionDisplay, 1000);
     
-    // Listen for game state updates from WASM
-    document.getElementById('gameCanvas').addEventListener('playerUpdate', (e) => {
-        if (gameClient && e.detail) {
-            try {
-                const player = JSON.parse(e.detail);
-                gameClient.update_player(player.username, player.x, player.y, player.health, player.resources);
-                console.log('Updated player:', player.username, 'at', player.x, player.y);
-            } catch (error) {
-                console.error('Failed to update player:', error);
-            }
-        }
-    });
-    
-    document.getElementById('gameCanvas').addEventListener('gameState', (e) => {
-        if (gameClient && e.detail) {
-            try {
-                gameClient.update_all_players(e.detail);
-                console.log('Updated all players from game state');
-            } catch (error) {
-                console.error('Failed to update game state:', error);
-            }
-        }
-    });
+    // Expose gameClient globally for WASM callbacks
+    window.gameClient = gameClient;
 }
 
 window.connectToGame = async function() {

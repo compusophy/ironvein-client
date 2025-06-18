@@ -378,31 +378,46 @@ impl IronVeinClient {
                 // Try to parse as different message types
                 if let Ok(ws_message) = serde_json::from_str::<WebSocketMessage>(&message_str) {
                     match ws_message {
-                        WebSocketMessage::PlayerUpdate { username, x, y, health: _, resources: _ } => {
+                        WebSocketMessage::PlayerUpdate { username, x, y, health, resources } => {
                             console_log!("🎮 Player {} moved to ({}, {})", username, x, y);
                             
-                            // Update player in HashMap - THIS WAS MISSING!
-                            
-                            // Note: We can't directly modify self.players from this closure
-                            // So we'll trigger a re-render through DOM events
+                            // Call update method on global gameClient
                             let window = web_sys::window().unwrap();
-                            let document = window.document().unwrap();
-                            if let Some(canvas) = document.get_element_by_id("gameCanvas") {
-                                let event = document.create_event("Event").unwrap();
-                                event.init_event_with_bubbles("playerUpdate", false);
-                                let _ = canvas.dispatch_event(&event);
+                            if let Ok(game_client) = js_sys::Reflect::get(&window, &"gameClient".into()) {
+                                if !game_client.is_undefined() {
+                                    if let Ok(update_fn) = js_sys::Reflect::get(&game_client, &"update_player".into()) {
+                                        if let Ok(func) = update_fn.dyn_into::<js_sys::Function>() {
+                                            let args = js_sys::Array::new();
+                                            args.push(&username.clone().into());
+                                            args.push(&(x as f64).into());
+                                            args.push(&(y as f64).into());
+                                            args.push(&(health as f64).into());
+                                            args.push(&(resources as f64).into());
+                                            let _ = func.apply(&game_client, &args);
+                                            console_log!("✅ Updated player {} via global client", username);
+                                        }
+                                    }
+                                }
                             }
                         }
                         WebSocketMessage::GameState { players } => {
                             console_log!("🌍 Received game state with {} players", players.len());
                             
-                            // Update all players - THIS WAS MISSING!
+                            // Call update_all_players on global gameClient
                             let window = web_sys::window().unwrap();
-                            let document = window.document().unwrap();
-                            if let Some(canvas) = document.get_element_by_id("gameCanvas") {
-                                let event = document.create_event("Event").unwrap();
-                                event.init_event_with_bubbles("gameState", false);
-                                let _ = canvas.dispatch_event(&event);
+                            if let Ok(game_client) = js_sys::Reflect::get(&window, &"gameClient".into()) {
+                                if !game_client.is_undefined() {
+                                    if let Ok(players_json) = serde_json::to_string(&players) {
+                                        if let Ok(update_fn) = js_sys::Reflect::get(&game_client, &"update_all_players".into()) {
+                                            if let Ok(func) = update_fn.dyn_into::<js_sys::Function>() {
+                                                let args = js_sys::Array::new();
+                                                args.push(&players_json.into());
+                                                let _ = func.apply(&game_client, &args);
+                                                console_log!("✅ Updated all {} players via global client", players.len());
+                                            }
+                                        }
+                                    }
+                                }
                             }
                         }
                         WebSocketMessage::ChatMessage(chat_msg) => {
@@ -412,6 +427,25 @@ impl IronVeinClient {
                         WebSocketMessage::PlayerJoined { username, x, y } => {
                             console_log!("🟢 Player {} joined at ({}, {})", username, x, y);
                             append_message(&format!("🟢 {} joined the battle at ({}, {})", username, x, y));
+                            
+                            // Add the new player to the map
+                            let window = web_sys::window().unwrap();
+                            if let Ok(game_client) = js_sys::Reflect::get(&window, &"gameClient".into()) {
+                                if !game_client.is_undefined() {
+                                    if let Ok(update_fn) = js_sys::Reflect::get(&game_client, &"update_player".into()) {
+                                        if let Ok(func) = update_fn.dyn_into::<js_sys::Function>() {
+                                            let args = js_sys::Array::new();
+                                            args.push(&username.clone().into());
+                                            args.push(&(x as f64).into());
+                                            args.push(&(y as f64).into());
+                                            args.push(&100f64.into());
+                                            args.push(&0f64.into());
+                                            let _ = func.apply(&game_client, &args);
+                                            console_log!("✅ Added new player {} to map", username);
+                                        }
+                                    }
+                                }
+                            }
                         }
                         WebSocketMessage::PlayerLeft { username } => {
                             console_log!("🔴 Player {} left", username);
