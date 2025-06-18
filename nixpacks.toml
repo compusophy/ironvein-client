@@ -1,8 +1,9 @@
 [phases.setup]
-nixPkgs = ["nodejs_18", "npm-9_x", "rustc", "cargo", "rustup", "wasm-pack", "gcc", "pkg-config"]
+nixPkgs = ["nodejs_18", "npm-9_x", "rustup", "wasm-pack", "gcc", "pkg-config"]
 
 [phases.install]
 cmds = [
+  "rustup default stable",
   "rustup target add wasm32-unknown-unknown",
   "npm ci"
 ]
