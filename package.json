@@ -8,7 +8,7 @@
     "build:wasm": "wasm-pack build --target web --out-dir pkg",
     "dev": "npm run build:wasm && vite",
     "build": "npm run build:wasm && vite build",
-    "start": "serve -s dist -l ${PORT:-3000}",
+    "start": "serve -s dist -p $PORT",
     "preview": "vite preview",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
