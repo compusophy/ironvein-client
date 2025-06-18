@@ -84,9 +84,15 @@ impl ChatClient {
                 // In development, assume server is on localhost:8080
                 format!("{}//localhost:8080", ws_protocol)
             } else {
-                // In production, replace client domain with server domain
-                let server_host = host.replace("ironvein-client", "ironvein-server");
-                format!("{}//{}", ws_protocol, server_host)
+                // In production on Railway, replace client domain with server domain
+                // ironvein-client-production.up.railway.app -> ironvein-server-production.up.railway.app
+                if host.contains("ironvein-client") {
+                    let server_host = host.replace("ironvein-client", "ironvein-server");
+                    format!("{}//{}", ws_protocol, server_host)
+                } else {
+                    // Generic Railway pattern
+                    format!("{}//{}", ws_protocol, "ironvein-server-production.up.railway.app")
+                }
             }
         } else {
             // Fallback
@@ -113,8 +119,23 @@ impl ChatClient {
         let websocket = WebSocket::new(&ws_url)?;
         
         // Set up WebSocket event handlers
+        let username_clone = self.username.clone();
+        let room_clone = self.room.clone();
+        let websocket_clone = websocket.clone();
+        
         let onopen_callback = Closure::wrap(Box::new(move |_event: Event| {
             console_log!("WebSocket connected!");
+            
+            // Auto-join room when connection opens
+            let join_message = WebSocketMessage::Join {
+                username: username_clone.clone(),
+                room: room_clone.clone(),
+            };
+            
+            if let Ok(message_json) = serde_json::to_string(&join_message) {
+                let _ = websocket_clone.send_with_str(&message_json);
+                console_log!("Auto-joined room {} as {}", room_clone, username_clone);
+            }
         }) as Box<dyn FnMut(Event)>);
         websocket.set_onopen(Some(onopen_callback.as_ref().unchecked_ref()));
         onopen_callback.forget();
@@ -153,18 +174,8 @@ impl ChatClient {
 
     #[wasm_bindgen]
     pub fn join_room(&self) -> Result<(), JsValue> {
-        if let Some(ref websocket) = self.websocket {
-            let join_message = WebSocketMessage::Join {
-                username: self.username.clone(),
-                room: self.room.clone(),
-            };
-            
-            let message_json = serde_json::to_string(&join_message)
-                .map_err(|e| JsValue::from_str(&format!("Serialization error: {}", e)))?;
-            
-            websocket.send_with_str(&message_json)?;
-            console_log!("Sent join message for user {} in room {}", self.username, self.room);
-        }
+        // Join room is now handled automatically in the onopen callback
+        console_log!("Join room will happen automatically when WebSocket connects");
         Ok(())
     }
 
