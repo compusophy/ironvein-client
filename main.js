@@ -2,7 +2,6 @@ import init, { IronVeinClient } from './pkg/client.js';
 
 let gameClient = null;
 let connected = false;
-let pendingMessages = new Map(); // Track our own messages to remove duplicates
 
 async function run() {
     // Initialize the WASM module
@@ -114,13 +113,7 @@ window.sendMessage = function() {
         gameClient.send_message(message);
         chatInput.value = '';
         
-        // Show message IMMEDIATELY and track it for duplicate removal
-        const timestamp = new Date().toLocaleTimeString();
-        const myUsername = document.getElementById('userDisplay').textContent;
-        const localMessageId = addLocalMessage(`[${timestamp}] ${myUsername}: ${message}`, message, myUsername);
-        
-        // Store it for later removal when server responds
-        pendingMessages.set(message.toLowerCase().trim(), localMessageId);
+        // NO LOCAL MESSAGE - let server handle everything
         
     } catch (error) {
         console.error('Failed to send message:', error);
@@ -128,44 +121,10 @@ window.sendMessage = function() {
     }
 };
 
-function addLocalMessage(messageText, rawMessage, username) {
-    const chatMessages = document.getElementById('chatMessages');
-    const messageDiv = document.createElement('div');
-    messageDiv.textContent = messageText;
-    messageDiv.dataset.local = 'true';
-    messageDiv.dataset.rawMessage = rawMessage.toLowerCase().trim();
-    messageDiv.dataset.username = username;
-    
-    chatMessages.appendChild(messageDiv);
-    chatMessages.scrollTop = chatMessages.scrollHeight;
-    
-    return messageDiv;
-}
-
 function appendChatMessage(message) {
     const chatMessages = document.getElementById('chatMessages');
     
-    // Extract message content to check for duplicates
-    let messageContent = '';
-    let username = '';
-    
-    // Parse server message format: "[timestamp] username: content"
-    const serverMatch = message.match(/^\[.*?\]\s+(.+?):\s+(.+)$/);
-    if (serverMatch) {
-        username = serverMatch[1];
-        messageContent = serverMatch[2].toLowerCase().trim();
-        
-        // Check if this is our own message - remove local version
-        const myUsername = document.getElementById('userDisplay').textContent;
-        if (username === myUsername && pendingMessages.has(messageContent)) {
-            const localDiv = pendingMessages.get(messageContent);
-            if (localDiv && localDiv.parentNode) {
-                localDiv.remove();
-            }
-            pendingMessages.delete(messageContent);
-        }
-    }
-    
+    // SIMPLE: Just add every message from server - no bullshit
     const messageDiv = document.createElement('div');
     messageDiv.textContent = message;
     

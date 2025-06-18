@@ -570,16 +570,14 @@ impl IronVeinClient {
 
 // Helper functions
 fn append_message(message: &str) {
+    // Call JavaScript appendChatMessage function for proper duplicate handling
     let window = web_sys::window().unwrap();
-    let document = window.document().unwrap();
-    
-    if let Some(chat_messages) = document.get_element_by_id("chatMessages") {
-        let new_message = document.create_element("div").unwrap();
-        new_message.set_text_content(Some(message));
-        chat_messages.append_child(&new_message).unwrap();
-        
-        // Auto-scroll to bottom
-        chat_messages.set_scroll_top(chat_messages.scroll_height());
+    if let Ok(append_fn) = js_sys::Reflect::get(&window, &"appendChatMessage".into()) {
+        if let Ok(func) = append_fn.dyn_into::<js_sys::Function>() {
+            let args = js_sys::Array::new();
+            args.push(&message.into());
+            let _ = func.apply(&window, &args);
+        }
     }
 }
 
