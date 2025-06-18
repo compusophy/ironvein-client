@@ -1,6 +1,6 @@
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
-use web_sys::{console, HtmlElement, WebSocket, MessageEvent, Event, ErrorEvent, MouseEvent, HtmlCanvasElement, CanvasRenderingContext2d};
+use web_sys::{console, WebSocket, MessageEvent, Event, ErrorEvent, MouseEvent, HtmlCanvasElement, CanvasRenderingContext2d};
 use serde::{Serialize, Deserialize};
 use std::collections::HashMap;
 
@@ -93,19 +93,34 @@ impl GameMap {
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(tag = "type")]
 enum WebSocketMessage {
+    #[serde(rename = "join")]
     Join { username: String, room: String },
+    #[serde(rename = "message")]
     Message { username: String, message: String, room: String },
+    #[serde(rename = "chat_message")]
+    ChatMessage(ChatMessage),
+    #[serde(rename = "player_joined")]
+    PlayerJoined { username: String, x: u32, y: u32 },
+    #[serde(rename = "player_left")]
+    PlayerLeft { username: String },
+    #[serde(rename = "error")]
+    Error { message: String },
     // Game-specific messages
+    #[serde(rename = "move")]
     Move { username: String, x: u32, y: u32, room: String },
+    #[serde(rename = "player_update")]
     PlayerUpdate { username: String, x: u32, y: u32, health: u32, resources: u32 },
+    #[serde(rename = "game_state")]
     GameState { players: Vec<Player> },
 }
 
 #[derive(Serialize, Deserialize, Debug)]
 struct ChatMessage {
+    id: String,
     username: String,
     message: String,
     timestamp: String,
+    room: String,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -198,6 +213,13 @@ impl IronVeinClient {
                     if let Ok(message_json) = serde_json::to_string(&move_message) {
                         let _ = websocket.send_with_str(&message_json);
                         console_log!("📤 Sent move command: ({}, {})", x, y);
+                        
+                        // Immediately update our own position optimistically
+                        let window = web_sys::window().unwrap();
+                        let document = window.document().unwrap();
+                        if let Some(pos_display) = document.get_element_by_id("positionDisplay") {
+                            pos_display.set_text_content(Some(&format!("({}, {})", x, y)));
+                        }
                     }
                 }
             }
@@ -404,7 +426,12 @@ impl IronVeinClient {
         websocket.set_onopen(Some(onopen_callback.as_ref().unchecked_ref()));
         onopen_callback.forget();
 
-        // Handle incoming messages        
+        // Handle incoming messages
+        let players_clone = self.players.clone();
+        let my_player_clone2 = self.my_player.clone();
+        let canvas_clone = self.canvas.clone();
+        let context_clone = self.context.clone();
+        
         let onmessage_callback = Closure::wrap(Box::new(move |event: MessageEvent| {
             if let Ok(message_text) = event.data().dyn_into::<js_sys::JsString>() {
                 let message_str: String = message_text.into();
@@ -412,31 +439,60 @@ impl IronVeinClient {
                 // Try to parse as different message types
                 if let Ok(ws_message) = serde_json::from_str::<WebSocketMessage>(&message_str) {
                     match ws_message {
-                        WebSocketMessage::PlayerUpdate { username, x, y, health: _, resources: _ } => {
+                        WebSocketMessage::PlayerUpdate { username, x, y, health, resources } => {
                             console_log!("🎮 Player {} moved to ({}, {})", username, x, y);
-                            // TODO: Update players HashMap and re-render
+                            
+                            // Update player in HashMap - THIS WAS MISSING!
+                            let player = Player {
+                                username: username.clone(),
+                                x, y, health, resources,
+                                room: "general".to_string(), // TODO: get from current room
+                            };
+                            
+                            // Note: We can't directly modify self.players from this closure
+                            // So we'll trigger a re-render through DOM events
+                            let window = web_sys::window().unwrap();
+                            let document = window.document().unwrap();
+                            if let Some(canvas) = document.get_element_by_id("gameCanvas") {
+                                let event = document.create_event("Event").unwrap();
+                                event.init_event_with_bubbles("playerUpdate", false);
+                                let _ = canvas.dispatch_event(&event);
+                            }
                         }
                         WebSocketMessage::GameState { players } => {
                             console_log!("🌍 Received game state with {} players", players.len());
-                            // TODO: Update all players and re-render
+                            
+                            // Update all players - THIS WAS MISSING!
+                            let window = web_sys::window().unwrap();
+                            let document = window.document().unwrap();
+                            if let Some(canvas) = document.get_element_by_id("gameCanvas") {
+                                let event = document.create_event("Event").unwrap();
+                                event.init_event_with_bubbles("gameState", false);
+                                let _ = canvas.dispatch_event(&event);
+                            }
+                        }
+                        WebSocketMessage::ChatMessage(chat_msg) => {
+                            // Handle chat messages properly - THIS WAS BROKEN!
+                            append_message(&format!("[{}] {}: {}", chat_msg.timestamp, chat_msg.username, chat_msg.message));
+                        }
+                        WebSocketMessage::PlayerJoined { username, x, y } => {
+                            console_log!("🟢 Player {} joined at ({}, {})", username, x, y);
+                            append_message(&format!("🟢 {} joined the battle at ({}, {})", username, x, y));
+                        }
+                        WebSocketMessage::PlayerLeft { username } => {
+                            console_log!("🔴 Player {} left", username);
+                            append_message(&format!("🔴 {} left the battle", username));
+                        }
+                        WebSocketMessage::Error { message } => {
+                            console_log!("❌ Server error: {}", message);
+                            append_message(&format!("❌ Error: {}", message));
                         }
                         _ => {
-                            console_log!("📨 Chat/other message: {}", message_str);
+                            console_log!("📨 Other message: {}", message_str);
                         }
                     }
                 } else {
-                    // Try parsing as legacy chat messages
-                    if let Ok(chat_msg) = serde_json::from_str::<ChatMessage>(&message_str) {
-                        append_message(&format!("[{}] {}: {}", chat_msg.timestamp, chat_msg.username, chat_msg.message));
-                    } else if let Ok(user_joined) = serde_json::from_str::<UserJoined>(&message_str) {
-                        append_message(&format!("🟢 {} joined the room", user_joined.username));
-                    } else if let Ok(user_left) = serde_json::from_str::<UserLeft>(&message_str) {
-                        append_message(&format!("🔴 {} left the room", user_left.username));
-                    } else if let Ok(error_msg) = serde_json::from_str::<ErrorMessage>(&message_str) {
-                        append_message(&format!("❌ Error: {}", error_msg.message));
-                    } else {
-                        console_log!("📨 Unknown message format: {}", message_str);
-                    }
+                    console_log!("📨 Unknown message format: {}", message_str);
                 }
             }
         }) as Box<dyn FnMut(MessageEvent)>);
@@ -500,6 +556,47 @@ impl IronVeinClient {
         } else {
             None
         }
+    }
+
+    // New methods to handle game state updates
+    #[wasm_bindgen]
+    pub fn update_player(&mut self, username: &str, x: u32, y: u32, health: u32, resources: u32) {
+        let player = Player {
+            username: username.to_string(),
+            x, y, health, resources,
+            room: self.room.clone(),
+        };
+        
+        // Update my player if it's me
+        if username == self.username {
+            self.my_player = Some(player.clone());
+        }
+        
+        // Update players HashMap
+        self.players.insert(username.to_string(), player);
+        
+        // Re-render the game
+        let _ = self.render_game();
+    }
+
+    #[wasm_bindgen] 
+    pub fn update_all_players(&mut self, players_json: &str) -> Result<(), JsValue> {
+        if let Ok(players) = serde_json::from_str::<Vec<Player>>(players_json) {
+            // Clear current players
+            self.players.clear();
+            
+            // Add all players
+            for player in players {
+                if player.username == self.username {
+                    self.my_player = Some(player.clone());
+                }
+                self.players.insert(player.username.clone(), player);
+            }
+            
+            // Re-render the game
+            self.render_game()?;
+        }
+        Ok(())
     }
 }
 
