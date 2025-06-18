@@ -3,8 +3,9 @@ import init, { IronVeinClient } from './pkg/client.js';
 let gameClient = null;
 let connected = false;
 let pendingMessages = new Map(); // Track pending messages to remove when server responds
-let lastMessageTime = 0;
+let pingStartTime = 0;
 let currentPing = 0;
+let pingInterval = null;
 
 async function run() {
     // Initialize the WASM module
@@ -45,9 +46,6 @@ function setupEventListeners() {
     // Auto-update position display
     setInterval(updatePositionDisplay, 1000);
     
-    // Auto-update ping display
-    setInterval(sendPing, 2000); // Send ping every 2 seconds
-    
     // Expose gameClient globally for WASM callbacks
     window.gameClient = gameClient;
 }
@@ -85,6 +83,9 @@ window.connectToGame = async function() {
         updateUI();
         updateUserDisplay(username, room);
         
+        // Start automatic ping system
+        startPingSystem();
+        
         // Show success message
         appendChatMessage('🎮 Connected to IronVein MMO RTS! Click on the grid to move your unit.');
         appendChatMessage('💬 Use the chat to coordinate with other players.');
@@ -118,9 +119,6 @@ window.sendMessage = function() {
     try {
         gameClient.send_message(message);
         chatInput.value = '';
-        
-        // Track message send time for ping calculation
-        lastMessageTime = performance.now();
         
         // Show "SENDING..." that will disappear when server responds
         const timestamp = formatMilitaryTime(new Date());
@@ -266,13 +264,33 @@ function formatMilitaryTime(date) {
     return `${hours}:${minutes}:${seconds}.${milliseconds}`;
 }
 
+function startPingSystem() {
+    // Clear any existing ping interval
+    if (pingInterval) {
+        clearInterval(pingInterval);
+    }
+    
+    // Start sending pings every 2 seconds
+    pingInterval = setInterval(() => {
+        if (connected && gameClient) {
+            sendPing();
+        }
+    }, 2000);
+    
+    // Send initial ping
+    setTimeout(() => {
+        if (connected && gameClient) {
+            sendPing();
+        }
+    }, 1000);
+}
+
 function sendPing() {
     if (!connected || !gameClient) return;
     
     pingStartTime = performance.now();
-    // We can repurpose a message for ping - or we can track WebSocket response time
-    // For now, let's track WebSocket roundtrip by sending a small message
     try {
+        // Send a special ping message that the server should echo back
         gameClient.send_message('__ping__');
     } catch (error) {
         console.error('Failed to send ping:', error);
@@ -297,13 +315,18 @@ function updatePingDisplay(ping) {
     }
 }
 
+// Function to be called from WASM when ping response is received
+window.onPingReceived = function() {
+    if (pingStartTime > 0) {
+        const ping = Math.round(performance.now() - pingStartTime);
+        updatePingDisplay(ping);
+        pingStartTime = 0; // Reset for next ping
+    }
+}
+
 // Function to be called from WASM when any message is received
 window.onMessageReceived = function() {
-    if (lastMessageTime > 0) {
-        const ping = Math.round(performance.now() - lastMessageTime);
-        updatePingDisplay(ping);
-        lastMessageTime = 0; // Reset for next measurement
-    }
+    // This function is kept for compatibility but ping tracking moved to onPingReceived
 }
 
 // Initialize the application

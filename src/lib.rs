@@ -379,68 +379,9 @@ impl IronVeinClient {
                 // Try to parse as different message types
                 if let Ok(ws_message) = serde_json::from_str::<WebSocketMessage>(&message_str) {
                     match ws_message {
-                        WebSocketMessage::PlayerUpdate { username, x, y, health, resources } => {
-                            console_log!("🎮 Player {} moved to ({}, {})", username, x, y);
-                            
-                            // Call ping tracking function
-                            call_message_received();
-                            
-                            // Call update_player on global gameClient
-                            let window = web_sys::window().unwrap();
-                            if let Ok(game_client) = js_sys::Reflect::get(&window, &"gameClient".into()) {
-                                if !game_client.is_undefined() {
-                                    if let Ok(update_fn) = js_sys::Reflect::get(&game_client, &"update_player".into()) {
-                                        if let Ok(func) = update_fn.dyn_into::<js_sys::Function>() {
-                                            let args = js_sys::Array::new();
-                                            args.push(&username.clone().into());
-                                            args.push(&(x as f64).into());
-                                            args.push(&(y as f64).into());
-                                            args.push(&(health as f64).into());
-                                            args.push(&(resources as f64).into());
-                                            let _ = func.apply(&game_client, &args);
-                                            console_log!("✅ Updated player {} via global client", username);
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        WebSocketMessage::GameState { players } => {
-                            console_log!("🌍 Received game state with {} players", players.len());
-                            
-                            // Call ping tracking function
-                            call_message_received();
-                            
-                            // Call update_all_players on global gameClient
-                            let window = web_sys::window().unwrap();
-                            if let Ok(game_client) = js_sys::Reflect::get(&window, &"gameClient".into()) {
-                                if !game_client.is_undefined() {
-                                    if let Ok(players_json) = serde_json::to_string(&players) {
-                                        if let Ok(update_fn) = js_sys::Reflect::get(&game_client, &"update_all_players".into()) {
-                                            if let Ok(func) = update_fn.dyn_into::<js_sys::Function>() {
-                                                let args = js_sys::Array::new();
-                                                args.push(&players_json.into());
-                                                let _ = func.apply(&game_client, &args);
-                                                console_log!("✅ Updated all {} players via global client", players.len());
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        WebSocketMessage::ChatMessage(chat_msg) => {
-                            // Handle chat messages properly - use JS timestamp formatting
-                            let formatted_timestamp = format_timestamp(&chat_msg.timestamp);
-                            append_message(&format!("[{}] {}: {}", formatted_timestamp, chat_msg.username, chat_msg.message));
-                            
-                            // Call ping tracking function
-                            call_message_received();
-                        }
                         WebSocketMessage::PlayerJoined { username, x, y } => {
                             console_log!("🟢 Player {} joined at ({}, {})", username, x, y);
                             append_message(&format!("🟢 {} joined the battle at ({}, {})", username, x, y));
-                            
-                            // Call ping tracking function
-                            call_message_received();
                             
                             // Add the new player to the map
                             let window = web_sys::window().unwrap();
@@ -464,12 +405,64 @@ impl IronVeinClient {
                         WebSocketMessage::PlayerLeft { username } => {
                             console_log!("🔴 Player {} left", username);
                             append_message(&format!("🔴 {} left the battle", username));
-                            call_message_received();
                         }
                         WebSocketMessage::Error { message } => {
                             console_log!("❌ Server error: {}", message);
                             append_message(&format!("❌ Error: {}", message));
-                            call_message_received();
+                        }
+                        WebSocketMessage::PlayerUpdate { username, x, y, health, resources } => {
+                            console_log!("🎮 Player {} moved to ({}, {})", username, x, y);
+                            
+                            // Call update_player on global gameClient
+                            let window = web_sys::window().unwrap();
+                            if let Ok(game_client) = js_sys::Reflect::get(&window, &"gameClient".into()) {
+                                if !game_client.is_undefined() {
+                                    if let Ok(update_fn) = js_sys::Reflect::get(&game_client, &"update_player".into()) {
+                                        if let Ok(func) = update_fn.dyn_into::<js_sys::Function>() {
+                                            let args = js_sys::Array::new();
+                                            args.push(&username.clone().into());
+                                            args.push(&(x as f64).into());
+                                            args.push(&(y as f64).into());
+                                            args.push(&(health as f64).into());
+                                            args.push(&(resources as f64).into());
+                                            let _ = func.apply(&game_client, &args);
+                                            console_log!("✅ Updated player {} via global client", username);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        WebSocketMessage::GameState { players } => {
+                            console_log!("🌍 Received game state with {} players", players.len());
+                            
+                            // Call update_all_players on global gameClient
+                            let window = web_sys::window().unwrap();
+                            if let Ok(game_client) = js_sys::Reflect::get(&window, &"gameClient".into()) {
+                                if !game_client.is_undefined() {
+                                    if let Ok(players_json) = serde_json::to_string(&players) {
+                                        if let Ok(update_fn) = js_sys::Reflect::get(&game_client, &"update_all_players".into()) {
+                                            if let Ok(func) = update_fn.dyn_into::<js_sys::Function>() {
+                                                let args = js_sys::Array::new();
+                                                args.push(&players_json.into());
+                                                let _ = func.apply(&game_client, &args);
+                                                console_log!("✅ Updated all {} players via global client", players.len());
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        WebSocketMessage::ChatMessage(chat_msg) => {
+                            // Check if this is a ping response
+                            if chat_msg.message == "__ping__" {
+                                // This is a ping response - calculate ping time
+                                call_ping_received();
+                                return; // Don't display ping messages in chat
+                            }
+                            
+                            // Handle regular chat messages - use JS timestamp formatting
+                            let formatted_timestamp = format_timestamp(&chat_msg.timestamp);
+                            append_message(&format!("[{}] {}: {}", formatted_timestamp, chat_msg.username, chat_msg.message));
                         }
                         _ => {
                             console_log!("📨 Other message: {}", message_str);
@@ -601,6 +594,15 @@ fn call_message_received() {
     let window = web_sys::window().unwrap();
     if let Ok(on_message_fn) = js_sys::Reflect::get(&window, &"onMessageReceived".into()) {
         if let Ok(func) = on_message_fn.dyn_into::<js_sys::Function>() {
+            let _ = func.apply(&window, &js_sys::Array::new());
+        }
+    }
+}
+
+fn call_ping_received() {
+    let window = web_sys::window().unwrap();
+    if let Ok(on_ping_fn) = js_sys::Reflect::get(&window, &"onPingReceived".into()) {
+        if let Ok(func) = on_ping_fn.dyn_into::<js_sys::Function>() {
             let _ = func.apply(&window, &js_sys::Array::new());
         }
     }
