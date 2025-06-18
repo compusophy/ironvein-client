@@ -113,18 +113,9 @@ window.sendMessage = function() {
         gameClient.send_message(message);
         chatInput.value = '';
         
-        // Add immediate feedback with different styling
-        const chatMessages = document.getElementById('chatMessages');
-        const messageDiv = document.createElement('div');
-        messageDiv.style.opacity = '0.7';
-        messageDiv.style.fontStyle = 'italic';
-        messageDiv.setAttribute('data-pending', 'true');
-        
+        // Show message IMMEDIATELY - no "[SENDING...]" bullshit
         const timestamp = new Date().toLocaleTimeString();
-        messageDiv.textContent = `[${timestamp}] [SENDING...] ${message}`;
-        
-        chatMessages.appendChild(messageDiv);
-        chatMessages.scrollTop = chatMessages.scrollHeight;
+        appendChatMessage(`[${timestamp}] ${document.getElementById('userDisplay').textContent}: ${message}`);
         
     } catch (error) {
         console.error('Failed to send message:', error);
@@ -135,23 +126,27 @@ window.sendMessage = function() {
 function appendChatMessage(message) {
     const chatMessages = document.getElementById('chatMessages');
     
-    // Remove any pending messages first - THIS WAS NOT WORKING!
-    const pendingMessages = chatMessages.querySelectorAll('[data-pending="true"]');
-    console.log('Removing', pendingMessages.length, 'pending messages');
-    pendingMessages.forEach(msg => {
-        console.log('Removing pending message:', msg.textContent);
-        msg.remove();
+    // Check if this exact message already exists (avoid server duplicates)
+    const existingMessages = Array.from(chatMessages.children);
+    const messageText = message.includes('[') ? message : `[${new Date().toLocaleTimeString()}] ${message}`;
+    
+    const isDuplicate = existingMessages.some(msg => {
+        const existing = msg.textContent;
+        const newMsg = messageText;
+        // Compare message content (ignore exact timestamp differences)
+        const existingContent = existing.substring(existing.indexOf('] ') + 2);
+        const newContent = newMsg.substring(newMsg.indexOf('] ') + 2);
+        return existingContent === newContent && Math.abs(msg.dataset.timestamp - Date.now()) < 5000;
     });
     
-    const messageDiv = document.createElement('div');
-    
-    // Add timestamp if not already included
-    if (!message.includes('[') || !message.includes(']')) {
-        const timestamp = new Date().toLocaleTimeString();
-        messageDiv.textContent = `[${timestamp}] ${message}`;
-    } else {
-        messageDiv.textContent = message;
+    if (isDuplicate) {
+        console.log('Ignoring duplicate message:', messageText);
+        return;
     }
+    
+    const messageDiv = document.createElement('div');
+    messageDiv.textContent = messageText;
+    messageDiv.dataset.timestamp = Date.now();
     
     chatMessages.appendChild(messageDiv);
     
