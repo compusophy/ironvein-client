@@ -2,6 +2,7 @@ import init, { IronVeinClient } from './pkg/client.js';
 
 let gameClient = null;
 let connected = false;
+let pendingMessages = new Map(); // Track pending messages to remove when server responds
 
 async function run() {
     // Initialize the WASM module
@@ -113,7 +114,13 @@ window.sendMessage = function() {
         gameClient.send_message(message);
         chatInput.value = '';
         
-        // NO LOCAL MESSAGE - let server handle everything
+        // Show "SENDING..." that will disappear when server responds
+        const timestamp = new Date().toLocaleTimeString();
+        const myUsername = document.getElementById('userDisplay').textContent;
+        const sendingDiv = addSendingMessage(`[${timestamp}] ${myUsername}: ${message}`, message);
+        
+        // Track it for removal when server responds
+        pendingMessages.set(message.toLowerCase().trim(), sendingDiv);
         
     } catch (error) {
         console.error('Failed to send message:', error);
@@ -121,10 +128,41 @@ window.sendMessage = function() {
     }
 };
 
+function addSendingMessage(messageText, rawMessage) {
+    const chatMessages = document.getElementById('chatMessages');
+    const messageDiv = document.createElement('div');
+    messageDiv.textContent = messageText + " [SENDING...]";
+    messageDiv.style.opacity = '0.6';
+    messageDiv.style.fontStyle = 'italic';
+    messageDiv.dataset.pending = 'true';
+    messageDiv.dataset.rawMessage = rawMessage.toLowerCase().trim();
+    
+    chatMessages.appendChild(messageDiv);
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+    
+    return messageDiv;
+}
+
 function appendChatMessage(message) {
     const chatMessages = document.getElementById('chatMessages');
     
-    // SIMPLE: Just add every message from server - no bullshit
+    // Check if this is our own message - remove pending version
+    const serverMatch = message.match(/^\[.*?\]\s+(.+?):\s+(.+)$/);
+    if (serverMatch) {
+        const username = serverMatch[1];
+        const messageContent = serverMatch[2].toLowerCase().trim();
+        const myUsername = document.getElementById('userDisplay').textContent;
+        
+        if (username === myUsername && pendingMessages.has(messageContent)) {
+            const pendingDiv = pendingMessages.get(messageContent);
+            if (pendingDiv && pendingDiv.parentNode) {
+                pendingDiv.remove();
+            }
+            pendingMessages.delete(messageContent);
+        }
+    }
+    
+    // Add server message
     const messageDiv = document.createElement('div');
     messageDiv.textContent = message;
     
