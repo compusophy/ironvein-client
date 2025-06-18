@@ -382,7 +382,10 @@ impl IronVeinClient {
                         WebSocketMessage::PlayerUpdate { username, x, y, health, resources } => {
                             console_log!("🎮 Player {} moved to ({}, {})", username, x, y);
                             
-                            // Call update method on global gameClient
+                            // Call ping tracking function
+                            call_message_received();
+                            
+                            // Call update_player on global gameClient
                             let window = web_sys::window().unwrap();
                             if let Ok(game_client) = js_sys::Reflect::get(&window, &"gameClient".into()) {
                                 if !game_client.is_undefined() {
@@ -403,6 +406,9 @@ impl IronVeinClient {
                         }
                         WebSocketMessage::GameState { players } => {
                             console_log!("🌍 Received game state with {} players", players.len());
+                            
+                            // Call ping tracking function
+                            call_message_received();
                             
                             // Call update_all_players on global gameClient
                             let window = web_sys::window().unwrap();
@@ -425,10 +431,16 @@ impl IronVeinClient {
                             // Handle chat messages properly - use JS timestamp formatting
                             let formatted_timestamp = format_timestamp(&chat_msg.timestamp);
                             append_message(&format!("[{}] {}: {}", formatted_timestamp, chat_msg.username, chat_msg.message));
+                            
+                            // Call ping tracking function
+                            call_message_received();
                         }
                         WebSocketMessage::PlayerJoined { username, x, y } => {
                             console_log!("🟢 Player {} joined at ({}, {})", username, x, y);
                             append_message(&format!("🟢 {} joined the battle at ({}, {})", username, x, y));
+                            
+                            // Call ping tracking function
+                            call_message_received();
                             
                             // Add the new player to the map
                             let window = web_sys::window().unwrap();
@@ -452,10 +464,12 @@ impl IronVeinClient {
                         WebSocketMessage::PlayerLeft { username } => {
                             console_log!("🔴 Player {} left", username);
                             append_message(&format!("🔴 {} left the battle", username));
+                            call_message_received();
                         }
                         WebSocketMessage::Error { message } => {
                             console_log!("❌ Server error: {}", message);
                             append_message(&format!("❌ Error: {}", message));
+                            call_message_received();
                         }
                         _ => {
                             console_log!("📨 Other message: {}", message_str);
@@ -572,28 +586,6 @@ impl IronVeinClient {
 
 // Helper functions
 fn append_message(message: &str) {
-    // Check if this is a ping message
-    if message.contains("__ping__") {
-        // Calculate ping and update display
-        let window = web_sys::window().unwrap();
-        if let Ok(ping_start) = js_sys::Reflect::get(&window, &"pingStartTime".into()) {
-            if let Some(start_time) = ping_start.as_f64() {
-                let current_time = window.performance().unwrap().now();
-                let ping = ((current_time - start_time) as i32).max(0);
-                
-                // Call updatePingDisplay function
-                if let Ok(update_ping_fn) = js_sys::Reflect::get(&window, &"updatePingDisplay".into()) {
-                    if let Ok(func) = update_ping_fn.dyn_into::<js_sys::Function>() {
-                        let args = js_sys::Array::new();
-                        args.push(&(ping as f64).into());
-                        let _ = func.apply(&window, &args);
-                    }
-                }
-            }
-        }
-        return; // Don't display ping messages in chat
-    }
-    
     // Call JavaScript appendChatMessage function for proper duplicate handling
     let window = web_sys::window().unwrap();
     if let Ok(append_fn) = js_sys::Reflect::get(&window, &"appendChatMessage".into()) {
@@ -601,6 +593,15 @@ fn append_message(message: &str) {
             let args = js_sys::Array::new();
             args.push(&message.into());
             let _ = func.apply(&window, &args);
+        }
+    }
+}
+
+fn call_message_received() {
+    let window = web_sys::window().unwrap();
+    if let Ok(on_message_fn) = js_sys::Reflect::get(&window, &"onMessageReceived".into()) {
+        if let Ok(func) = on_message_fn.dyn_into::<js_sys::Function>() {
+            let _ = func.apply(&window, &js_sys::Array::new());
         }
     }
 }

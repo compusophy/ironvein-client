@@ -3,7 +3,7 @@ import init, { IronVeinClient } from './pkg/client.js';
 let gameClient = null;
 let connected = false;
 let pendingMessages = new Map(); // Track pending messages to remove when server responds
-let pingStartTime = 0;
+let lastMessageTime = 0;
 let currentPing = 0;
 
 async function run() {
@@ -118,6 +118,9 @@ window.sendMessage = function() {
     try {
         gameClient.send_message(message);
         chatInput.value = '';
+        
+        // Track message send time for ping calculation
+        lastMessageTime = performance.now();
         
         // Show "SENDING..." that will disappear when server responds
         const timestamp = formatMilitaryTime(new Date());
@@ -291,6 +294,15 @@ function updatePingDisplay(ping) {
         pingDisplay.classList.add('ping-ok');
     } else {
         pingDisplay.classList.add('ping-bad');
+    }
+}
+
+// Function to be called from WASM when any message is received
+window.onMessageReceived = function() {
+    if (lastMessageTime > 0) {
+        const ping = Math.round(performance.now() - lastMessageTime);
+        updatePingDisplay(ping);
+        lastMessageTime = 0; // Reset for next measurement
     }
 }
 
