@@ -276,20 +276,8 @@ impl IronVeinClient {
         self.username = username.to_string();
         self.room = room.to_string();
         
-        // Initialize my player at random position
-        let x = (js_sys::Math::random() * GRID_SIZE as f64) as u32;
-        let y = (js_sys::Math::random() * GRID_SIZE as f64) as u32;
-        
-        self.my_player = Some(Player {
-            username: username.to_string(),
-            x,
-            y,
-            room: room.to_string(),
-            health: 100,
-            resources: 0,
-        });
-        
-        console_log!("User info set: {} in room {} at position ({}, {})", username, room, x, y);
+        // Don't initialize position here - let server determine spawn position
+        console_log!("User info set: {} in room {}", username, room);
     }
 
     fn get_server_url() -> String {
@@ -336,7 +324,6 @@ impl IronVeinClient {
         let username_clone = self.username.clone();
         let room_clone = self.room.clone();
         let websocket_clone = websocket.clone();
-        let my_player_clone = self.my_player.clone();
         
         let onopen_callback = Closure::wrap(Box::new(move |_event: Event| {
             console_log!("WebSocket connected!");
@@ -350,21 +337,6 @@ impl IronVeinClient {
             if let Ok(message_json) = serde_json::to_string(&join_message) {
                 let _ = websocket_clone.send_with_str(&message_json);
                 console_log!("Auto-joined room {} as {}", room_clone, username_clone);
-            }
-
-            // Send initial position
-            if let Some(ref player) = my_player_clone {
-                let move_message = WebSocketMessage::Move {
-                    username: player.username.clone(),
-                    x: player.x,
-                    y: player.y,
-                    room: player.room.clone(),
-                };
-                
-                if let Ok(message_json) = serde_json::to_string(&move_message) {
-                    let _ = websocket_clone.send_with_str(&message_json);
-                    console_log!("🎮 Sent initial position: ({}, {})", player.x, player.y);
-                }
             }
         }) as Box<dyn FnMut(Event)>);
         websocket.set_onopen(Some(onopen_callback.as_ref().unchecked_ref()));
@@ -383,10 +355,11 @@ impl IronVeinClient {
                             console_log!("🟢 Player {} joined at ({}, {})", username, x, y);
                             append_message(&format!("🟢 {} joined the battle at ({}, {})", username, x, y));
                             
-                            // Add the new player to the map
+                            // If this is me joining, set my position
                             let window = web_sys::window().unwrap();
                             if let Ok(game_client) = js_sys::Reflect::get(&window, &"gameClient".into()) {
                                 if !game_client.is_undefined() {
+                                    // Update the player on the map
                                     if let Ok(update_fn) = js_sys::Reflect::get(&game_client, &"update_player".into()) {
                                         if let Ok(func) = update_fn.dyn_into::<js_sys::Function>() {
                                             let args = js_sys::Array::new();
@@ -396,7 +369,7 @@ impl IronVeinClient {
                                             args.push(&100f64.into());
                                             args.push(&0f64.into());
                                             let _ = func.apply(&game_client, &args);
-                                            console_log!("✅ Added new player {} to map", username);
+                                            console_log!("✅ Added new player {} to map at ({}, {})", username, x, y);
                                         }
                                     }
                                 }
