@@ -134,7 +134,18 @@ window.sendMessage = function() {
         gameClient.send_message(message);
         chatInput.value = '';
         
-        // Don't add local message - let server handle all chat display
+        // Add immediate feedback with different styling
+        const chatMessages = document.getElementById('chatMessages');
+        const messageDiv = document.createElement('div');
+        messageDiv.style.opacity = '0.7';
+        messageDiv.style.fontStyle = 'italic';
+        messageDiv.setAttribute('data-pending', 'true');
+        
+        const timestamp = new Date().toLocaleTimeString();
+        messageDiv.textContent = `[${timestamp}] [SENDING...] ${message}`;
+        
+        chatMessages.appendChild(messageDiv);
+        chatMessages.scrollTop = chatMessages.scrollHeight;
         
     } catch (error) {
         console.error('Failed to send message:', error);
@@ -144,11 +155,20 @@ window.sendMessage = function() {
 
 function appendChatMessage(message) {
     const chatMessages = document.getElementById('chatMessages');
+    
+    // Remove any pending messages first
+    const pendingMessages = chatMessages.querySelectorAll('[data-pending="true"]');
+    pendingMessages.forEach(msg => msg.remove());
+    
     const messageDiv = document.createElement('div');
     
-    // Add timestamp
-    const timestamp = new Date().toLocaleTimeString();
-    messageDiv.textContent = `[${timestamp}] ${message}`;
+    // Add timestamp if not already included
+    if (!message.includes('[') || !message.includes(']')) {
+        const timestamp = new Date().toLocaleTimeString();
+        messageDiv.textContent = `[${timestamp}] ${message}`;
+    } else {
+        messageDiv.textContent = message;
+    }
     
     chatMessages.appendChild(messageDiv);
     
