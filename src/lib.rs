@@ -152,6 +152,87 @@ impl IronVeinClient {
         Ok(())
     }
 
+    #[wasm_bindgen]
+    pub fn connect_to_server(&mut self) -> Result<(), JsValue> {
+        let server_url = Self::get_server_url();
+        let ws_url = format!("{}/ws/{}", server_url, self.room);
+        
+        console_log!("Connecting to WebSocket: {}", ws_url);
+        let websocket = WebSocket::new(&ws_url)?;
+        
+        // Set up WebSocket event handlers but don't auto-join
+        let username = self.username.clone();
+        let room = self.room.clone();
+        
+        // Store websocket reference
+        self.websocket = Some(websocket.clone());
+        
+        // Setup WebSocket handlers without auto-join
+        self.setup_websocket_handlers_lobby_only(&websocket, username, room)?;
+        
+        Ok(())
+    }
+
+    #[wasm_bindgen]
+    pub fn join_battle(&self) -> Result<(), JsValue> {
+        if !self.is_websocket_connected() {
+            return Err(JsValue::from_str("Not connected to server"));
+        }
+        
+        if let Some(ref websocket) = self.websocket {
+            // Send join message to spawn player
+            let join_message = WebSocketMessage::Join {
+                username: self.username.clone(),
+                room: self.room.clone(),
+            };
+            
+            if let Ok(message_json) = serde_json::to_string(&join_message) {
+                websocket.send_with_str(&message_json)?;
+                console_log!("🏠 Joined battle as {} in room {}", self.username, self.room);
+                
+                // Setup click handler and start game loop
+                let window = web_sys::window().unwrap();
+                if let Ok(game_client) = js_sys::Reflect::get(&window, &"gameClient".into()) {
+                    if let Ok(setup_fn) = js_sys::Reflect::get(&game_client, &"setup_click_handler".into()) {
+                        if let Ok(func) = setup_fn.dyn_into::<js_sys::Function>() {
+                            let _ = func.call0(&game_client);
+                        }
+                    }
+                    if let Ok(start_fn) = js_sys::Reflect::get(&game_client, &"start_game_loop".into()) {
+                        if let Ok(func) = start_fn.dyn_into::<js_sys::Function>() {
+                            let _ = func.call0(&game_client);
+                        }
+                    }
+                }
+            }
+        }
+        
+        Ok(())
+    }
+
+    #[wasm_bindgen]
+    pub fn send_ping(&self) -> Result<(), JsValue> {
+        if !self.is_websocket_connected() {
+            return Ok(()); // Silent fail for pings
+        }
+        
+        if let Some(ref websocket) = self.websocket {
+            // Use minimal ping payload for efficiency
+            let ping_message = WebSocketMessage::Message {
+                username: self.username.clone(),
+                message: "p".to_string(), // Minimal payload
+                room: self.room.clone(),
+            };
+            
+            if let Ok(message_json) = serde_json::to_string(&ping_message) {
+                let _ = websocket.send_with_str(&message_json);
+                // Silent operation - no logging for pings
+            }
+        }
+        
+        Ok(())
+    }
+
     fn setup_websocket_handlers(&self, websocket: &WebSocket, username: String, room: String) -> Result<(), JsValue> {
         // Store reference to self for callbacks
         let websocket_for_join = websocket.clone();
@@ -224,7 +305,8 @@ impl IronVeinClient {
                                 Self::update_all_game_players(&players);
                             }
                             WebSocketMessage::ChatMessage(chat_msg) => {
-                                if chat_msg.message == "__ping__" && chat_msg.username == username_for_msg {
+                                // Handle ping responses with backward compatibility
+                                if (chat_msg.message == "__ping__" || chat_msg.message == "p") && chat_msg.username == username_for_msg {
                                     Self::handle_ping_response();
                                     return;
                                 }
@@ -235,6 +317,71 @@ impl IronVeinClient {
                                 Self::append_chat_message(&format!("❌ Error: {}", message));
                             }
                             _ => {}
+                        }
+                    }
+                    Err(e) => {
+                        console_log!("❌ Failed to parse message: {}", e);
+                    }
+                }
+            }
+        }) as Box<dyn FnMut(MessageEvent)>);
+        websocket.set_onmessage(Some(onmessage_callback.as_ref().unchecked_ref()));
+        onmessage_callback.forget();
+
+        // OnError - handle connection errors
+        let onerror_callback = Closure::wrap(Box::new(|error_event: ErrorEvent| {
+            console_log!("❌ WebSocket connection error: {:?}", error_event);
+            Self::append_chat_message("❌ Connection error - please refresh to reconnect");
+        }) as Box<dyn FnMut(ErrorEvent)>);
+        websocket.set_onerror(Some(onerror_callback.as_ref().unchecked_ref()));
+        onerror_callback.forget();
+
+        // OnClose - handle connection close
+        let onclose_callback = Closure::wrap(Box::new(|close_event: CloseEvent| {
+            console_log!("🔌 WebSocket connection closed. Code: {}, Reason: {}", 
+                close_event.code(), close_event.reason());
+            Self::append_chat_message("🔌 Connection lost. Please refresh to reconnect.");
+        }) as Box<dyn FnMut(CloseEvent)>);
+        websocket.set_onclose(Some(onclose_callback.as_ref().unchecked_ref()));
+        onclose_callback.forget();
+
+        Ok(())
+    }
+
+    fn setup_websocket_handlers_lobby_only(&self, websocket: &WebSocket, username: String, room: String) -> Result<(), JsValue> {
+        // OnOpen - connect but don't auto-join battle
+        let onopen_callback = Closure::wrap(Box::new(move |_event: Event| {
+            console_log!("🌐 WebSocket connected to lobby!");
+            // Don't auto-join - user will manually join battle later
+        }) as Box<dyn FnMut(Event)>);
+        websocket.set_onopen(Some(onopen_callback.as_ref().unchecked_ref()));
+        onopen_callback.forget();
+
+        // OnMessage - handle lobby messages (chat only, no game events yet)
+        let username_for_msg = username.clone();
+        let pending_messages = self.pending_messages.clone();
+        let onmessage_callback = Closure::wrap(Box::new(move |event: MessageEvent| {
+            if let Ok(message_str) = event.data().dyn_into::<js_sys::JsString>() {
+                let message_str = String::from(message_str);
+                
+                match serde_json::from_str::<WebSocketMessage>(&message_str) {
+                    Ok(parsed_message) => {
+                        match parsed_message {
+                            WebSocketMessage::ChatMessage(chat_msg) => {
+                                // Handle ping responses with backward compatibility
+                                if (chat_msg.message == "__ping__" || chat_msg.message == "p") && chat_msg.username == username_for_msg {
+                                    Self::handle_ping_response();
+                                    return;
+                                }
+                                Self::handle_chat_message(chat_msg, &pending_messages);
+                            }
+                            WebSocketMessage::Error { message } => {
+                                console_log!("❌ Server error: {}", message);
+                                Self::append_chat_message(&format!("❌ Error: {}", message));
+                            }
+                            _ => {
+                                // Ignore game events in lobby mode
+                            }
                         }
                     }
                     Err(e) => {
@@ -341,7 +488,7 @@ impl IronVeinClient {
         if !self.is_websocket_connected() {
             console_log!("❌ WebSocket not connected, cannot send message");
             // Only show error for non-ping messages
-            if message != "__ping__" {
+            if message != "__ping__" && message != "p" {
                 Self::append_chat_message("❌ Not connected to server");
             }
             return Ok(());
@@ -360,7 +507,7 @@ impl IronVeinClient {
             match websocket.send_with_str(&message_json) {
                 Ok(_) => {
                     // Only log and add to pending for non-ping messages
-                    if message == "__ping__" {
+                    if message == "__ping__" || message == "p" {
                         // Silent ping - don't log or add to chat
                     } else {
                         console_log!("💬 Sent chat message: {}", message);
@@ -371,7 +518,7 @@ impl IronVeinClient {
                 Err(e) => {
                     console_log!("❌ Failed to send message: {:?}", e);
                     // Only show error for non-ping messages
-                    if message != "__ping__" {
+                    if message != "__ping__" && message != "p" {
                         Self::append_chat_message("❌ Failed to send message - connection lost");
                     }
                 }

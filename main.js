@@ -2,11 +2,13 @@ import init, { IronVeinClient } from './pkg/client.js';
 
 let gameClient = null;
 let connected = false;
+let inBattle = false;
 let pingStartTime = 0;
 let pingInterval = null;
 let onlinePlayers = new Map();
+let consecutiveSuccesses = 0; // Ping stability tracking
 
-// Minimal JavaScript - just UI interface, everything else in Rust
+// Two-stage connection: Connect → Join Battle
 async function run() {
     await init();
     console.log('🚀 Lightweight JS interface loaded');
@@ -19,11 +21,17 @@ async function run() {
 function setupEventListeners() {
     // Enter key handlers
     document.getElementById('usernameInput').addEventListener('keypress', (e) => {
-        if (e.key === 'Enter') connectToGame();
+        if (e.key === 'Enter') connectToServer();
     });
     
     document.getElementById('roomInput').addEventListener('keypress', (e) => {
-        if (e.key === 'Enter') connectToGame();
+        if (e.key === 'Enter') {
+            if (connected && !inBattle) {
+                joinBattle();
+            } else {
+                connectToServer();
+            }
+        }
     });
     
     document.getElementById('chatInput').addEventListener('keypress', (e) => {
@@ -34,28 +42,33 @@ function setupEventListeners() {
     window.gameClient = gameClient;
 }
 
-// Connect to game - minimal JS, let Rust handle everything
-window.connectToGame = async function() {
+// Stage 1: Connect to server (see lobby, chat, players)
+window.connectToServer = async function() {
     const username = document.getElementById('usernameInput').value.trim();
     const room = document.getElementById('roomInput').value.trim();
     
-    if (!username || !room) {
-        alert('Please enter both battle name and battlefield!');
+    if (!username) {
+        alert('Please enter your warrior name!');
+        return;
+    }
+    
+    if (!room) {
+        alert('Please enter battlefield name!');
         return;
     }
     
     try {
-        // Let Rust handle everything
+        // Set user info and connect to server
         gameClient.set_user_info(username, room);
-        await gameClient.setup_game_canvas('gameCanvas');
-        await gameClient.connect();
+        await gameClient.connect_to_server(); // Just connect, don't join game yet
         
         connected = true;
         updateUI();
         updateUserDisplay(username, room);
         startPingSystem();
         
-        console.log('🎮 Connected! Rust is handling all game logic.');
+        appendSystemMessage('🌐 Connected to server! You can now see chat and players.');
+        appendSystemMessage('🎮 Click "Join Battle" to spawn your unit and start playing.');
         
     } catch (error) {
         console.error('Connection failed:', error);
@@ -63,10 +76,37 @@ window.connectToGame = async function() {
     }
 };
 
-// Send chat message - let Rust handle pending state
+// Stage 2: Join the actual battle (spawn player)
+window.joinBattle = async function() {
+    if (!connected) {
+        appendSystemMessage('❌ Connect to server first!');
+        return;
+    }
+    
+    if (inBattle) {
+        appendSystemMessage('❌ Already in battle!');
+        return;
+    }
+    
+    try {
+        await gameClient.setup_game_canvas('gameCanvas');
+        await gameClient.join_battle(); // Spawn player in game
+        
+        inBattle = true;
+        updateUI();
+        
+        appendSystemMessage('⚔️ Joined battle! Click on the grid to move your unit.');
+        
+    } catch (error) {
+        console.error('Failed to join battle:', error);
+        appendSystemMessage(`❌ Failed to join battle: ${error}`);
+    }
+};
+
+// Send chat message (works in lobby and battle)
 window.sendMessage = function() {
-    if (!connected || !gameClient) {
-        appendSystemMessage('❌ Not connected');
+    if (!connected) {
+        appendSystemMessage('❌ Not connected to server');
         return;
     }
     
@@ -84,17 +124,41 @@ window.sendMessage = function() {
     }
 };
 
-// Simple UI updates - keep JS minimal
+// UI updates
 function updateUI() {
     const setupPanel = document.getElementById('setupPanel');
     const chatInput = document.getElementById('chatInput');
+    const connectBtn = document.getElementById('connectBtn');
+    const joinBtn = document.getElementById('joinBtn');
     
-    if (connected) {
+    if (inBattle) {
+        // In battle: hide setup, enable chat
         setupPanel.classList.add('hidden');
         chatInput.disabled = false;
-        chatInput.placeholder = 'Type your message...';
+        chatInput.placeholder = 'Type your battle message...';
+    } else if (connected) {
+        // Connected but not in battle: show lobby
+        if (connectBtn) {
+            connectBtn.textContent = '🌐 Connected to Server';
+            connectBtn.disabled = true;
+        }
+        if (joinBtn) {
+            joinBtn.disabled = false;
+            joinBtn.style.opacity = '1';
+        }
+        chatInput.disabled = false;
+        chatInput.placeholder = 'Chat in lobby...';
     } else {
+        // Not connected: show connect button
         setupPanel.classList.remove('hidden');
+        if (connectBtn) {
+            connectBtn.textContent = '🌐 Connect to Server';
+            connectBtn.disabled = false;
+        }
+        if (joinBtn) {
+            joinBtn.disabled = true;
+            joinBtn.style.opacity = '0.5';
+        }
         chatInput.disabled = true;
         chatInput.placeholder = 'Connect to chat...';
     }
@@ -105,29 +169,45 @@ function updateUserDisplay(username, room) {
     document.getElementById('roomDisplay').textContent = `Room: ${room}`;
 }
 
-// Simple ping system - 2 second intervals
+// Optimized ping system - world-class implementation
 function startPingSystem() {
     if (pingInterval) clearInterval(pingInterval);
     
-    pingInterval = setInterval(() => {
+    let pingCount = 0;
+    
+    // Adaptive ping frequency based on connection stability
+    const getPingInterval = () => {
+        if (consecutiveSuccesses > 10) return 5000; // 5s when stable
+        if (consecutiveSuccesses > 5) return 3000;  // 3s when fairly stable
+        return 2000; // 2s when unstable or starting
+    };
+    
+    const doPing = () => {
         if (connected && gameClient) {
-            // Check if WebSocket is actually connected before sending ping
             try {
                 pingStartTime = performance.now();
-                gameClient.send_message('__ping__');
+                pingCount++;
+                
+                // Use minimal payload for efficiency
+                gameClient.send_ping(); // Will implement this as separate method
+                
+                // Schedule next ping with adaptive interval
+                setTimeout(doPing, getPingInterval());
+                
             } catch (error) {
-                console.error('❌ Ping failed, connection lost:', error);
-                // Stop pinging if connection is lost
-                if (pingInterval) {
-                    clearInterval(pingInterval);
-                    pingInterval = null;
-                }
+                console.error('❌ Ping failed:', error);
+                consecutiveSuccesses = 0;
                 connected = false;
                 updateUI();
                 updatePingDisplay('DISCONNECTED');
             }
         }
-    }, 2000);
+    };
+    
+    // Start immediate ping
+    doPing();
+    
+    console.log('📶 Adaptive ping system started');
 }
 
 // Ping response handler - called from Rust
@@ -136,6 +216,13 @@ window.onPingReceived = function() {
         const ping = Math.round(performance.now() - pingStartTime);
         updatePingDisplay(ping);
         pingStartTime = 0;
+        
+        // Track stability for adaptive pinging
+        if (ping < 200) {
+            consecutiveSuccesses = Math.min(consecutiveSuccesses + 1, 15);
+        } else {
+            consecutiveSuccesses = Math.max(consecutiveSuccesses - 1, 0);
+        }
     }
 }
 
@@ -152,14 +239,14 @@ function updatePingDisplay(ping) {
     
     pingDisplay.textContent = `Ping: ${ping}ms`;
     
-    // Update ping color
+    // Update ping color - world-class thresholds
     pingDisplay.classList.remove('ping-good', 'ping-ok', 'ping-bad');
-    if (ping < 50) {
-        pingDisplay.classList.add('ping-good');
-    } else if (ping < 150) {
-        pingDisplay.classList.add('ping-ok');
+    if (ping < 30) {
+        pingDisplay.classList.add('ping-good'); // Excellent
+    } else if (ping < 80) {
+        pingDisplay.classList.add('ping-ok'); // Good
     } else {
-        pingDisplay.classList.add('ping-bad');
+        pingDisplay.classList.add('ping-bad'); // Poor
     }
 }
 
@@ -211,7 +298,7 @@ function appendSystemMessage(message) {
     const chatMessages = document.getElementById('chatMessages');
     const messageDiv = document.createElement('div');
     messageDiv.textContent = message;
-    messageDiv.style.color = '#ff6b6b';
+    messageDiv.style.color = '#4ecdc4';
     messageDiv.style.fontStyle = 'italic';
     
     chatMessages.appendChild(messageDiv);

@@ -360,9 +360,16 @@
             transition: transform 0.2s ease;
         }
 
-        .connect-btn:hover {
+        .connect-btn:hover:not(:disabled) {
             transform: translateY(-2px);
             box-shadow: 0 5px 15px var(--iron-shadow);
+        }
+
+        .connect-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            background: linear-gradient(45deg, #7f8c8d, #95a5a6);
+            transform: none;
         }
 
         .hidden {
@@ -489,7 +496,8 @@
             <label for="roomInput">Battlefield:</label>
             <input type="text" id="roomInput" value="general" placeholder="general">
         </div>
-        <button class="connect-btn" onclick="connectToGame()">⚔️ Enter Battle</button>
+        <button class="connect-btn" onclick="connectToServer()" id="connectBtn">🌐 Connect to Server</button>
+        <button class="connect-btn" onclick="joinBattle()" id="joinBtn" disabled style="margin-top: 10px; opacity: 0.5;">⚔️ Join Battle</button>
     </div>
 
     <script type="module" src="./main.js"></script>
