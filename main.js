@@ -6,6 +6,7 @@ let pendingMessages = new Map(); // Track pending messages to remove when server
 let pingStartTime = 0;
 let currentPing = 0;
 let pingInterval = null;
+let onlinePlayers = new Map(); // Track online players
 
 async function run() {
     // Initialize the WASM module
@@ -43,8 +44,8 @@ function setupEventListeners() {
         }
     });
     
-    // Auto-update position display
-    setInterval(updatePositionDisplay, 1000);
+    // Auto-update position display and stats
+    setInterval(updateStats, 1000);
     
     // Expose gameClient globally for WASM callbacks
     window.gameClient = gameClient;
@@ -57,13 +58,13 @@ window.connectToGame = async function() {
     const room = roomInput.value.trim();
     
     if (!username) {
-        alert('Please enter a username!');
+        alert('Please enter a battle name!');
         usernameInput.focus();
         return;
     }
     
     if (!room) {
-        alert('Please enter a room name!');
+        alert('Please enter a battlefield name!');
         roomInput.focus();
         return;
     }
@@ -85,6 +86,9 @@ window.connectToGame = async function() {
         
         // Start automatic ping system
         startPingSystem();
+        
+        // Initialize online players list
+        updateOnlinePlayersList();
         
         // Show success message
         appendChatMessage('🎮 Connected to IronVein MMO RTS! Click on the grid to move your unit.');
@@ -153,6 +157,7 @@ function appendChatMessage(message) {
     const chatMessages = document.getElementById('chatMessages');
     
     // Check if this is our own message - remove pending version
+    // Updated regex to handle military time format HH:MM:SS.MS
     const serverMatch = message.match(/^\[(\d{2}:\d{2}:\d{2}\.\d{2})\]\s+(.+?):\s+(.+)$/);
     if (serverMatch) {
         const timestamp = serverMatch[1];
@@ -186,17 +191,14 @@ function appendChatMessage(message) {
 
 function updateUI() {
     const setupPanel = document.getElementById('setupPanel');
-    const statsPanel = document.getElementById('statsPanel');
     const chatInput = document.getElementById('chatInput');
     
     if (connected) {
         setupPanel.classList.add('hidden');
-        statsPanel.classList.remove('hidden');
         chatInput.disabled = false;
         chatInput.placeholder = 'Type your message...';
     } else {
         setupPanel.classList.remove('hidden');
-        statsPanel.classList.add('hidden');
         chatInput.disabled = true;
         chatInput.placeholder = 'Connect to chat...';
     }
@@ -207,7 +209,7 @@ function updateUserDisplay(username, room) {
     document.getElementById('roomDisplay').textContent = `Room: ${room}`;
 }
 
-function updatePositionDisplay() {
+function updateStats() {
     if (!connected || !gameClient) {
         return;
     }
@@ -218,43 +220,57 @@ function updatePositionDisplay() {
             const x = position[0];
             const y = position[1];
             document.getElementById('positionDisplay').textContent = `(${x}, ${y})`;
-            
-            // Update stats (placeholder for now)
-            document.getElementById('healthStat').textContent = '100';
-            document.getElementById('resourcesStat').textContent = '0';
         }
     } catch (error) {
         console.error('Failed to get position:', error);
     }
 }
 
-// Add some helper functions for the game
-function updateGameStats(health, resources) {
-    document.getElementById('healthStat').textContent = health;
-    document.getElementById('resourcesStat').textContent = resources;
+function updateOnlinePlayersList() {
+    const playersList = document.getElementById('playersList');
+    playersList.innerHTML = '';
+    
+    if (onlinePlayers.size === 0) {
+        const noPlayersDiv = document.createElement('div');
+        noPlayersDiv.className = 'player-item';
+        noPlayersDiv.innerHTML = `
+            <span class="player-name">No players online</span>
+            <span class="player-pos">--</span>
+        `;
+        playersList.appendChild(noPlayersDiv);
+        return;
+    }
+    
+    // Sort players by name
+    const sortedPlayers = Array.from(onlinePlayers.values()).sort((a, b) => a.username.localeCompare(b.username));
+    
+    sortedPlayers.forEach(player => {
+        const playerDiv = document.createElement('div');
+        playerDiv.className = 'player-item';
+        
+        const isMe = player.username === document.getElementById('userDisplay').textContent;
+        const nameStyle = isMe ? 'color: var(--iron-accent); font-weight: bold;' : '';
+        
+        playerDiv.innerHTML = `
+            <span class="player-name" style="${nameStyle}">${player.username}${isMe ? ' (YOU)' : ''}</span>
+            <span class="player-pos">(${player.x}, ${player.y})</span>
+        `;
+        
+        playersList.appendChild(playerDiv);
+    });
 }
 
-// Handle page visibility for performance
-document.addEventListener('visibilitychange', () => {
-    if (document.hidden) {
-        // Game is hidden, could pause updates
-    } else {
-        // Game is visible, resume updates
-        if (connected && gameClient) {
-            gameClient.render_game();
-        }
-    }
-});
+// Function to add/update a player in the online list
+window.updatePlayerInList = function(username, x, y, health, resources) {
+    onlinePlayers.set(username, { username, x, y, health, resources });
+    updateOnlinePlayersList();
+};
 
-// Handle window resize
-window.addEventListener('resize', () => {
-    if (connected && gameClient) {
-        // Re-render game on resize
-        setTimeout(() => {
-            gameClient.render_game();
-        }, 100);
-    }
-});
+// Function to remove a player from the online list
+window.removePlayerFromList = function(username) {
+    onlinePlayers.delete(username);
+    updateOnlinePlayersList();
+};
 
 function formatMilitaryTime(date) {
     const hours = String(date.getUTCHours()).padStart(2, '0');
@@ -330,9 +346,4 @@ window.onMessageReceived = function() {
 }
 
 // Initialize the application
-run().catch(console.error);
-
-// Export functions for debugging
-window.gameClient = gameClient;
-window.appendChatMessage = appendChatMessage;
-window.updateGameStats = updateGameStats; 
+run().catch(console.error); 

@@ -3,8 +3,23 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>🎮 IronVein MMO RTS</title>
+    <title>IronVein MMO RTS</title>
     <style>
+        /* IronVein Theme Variables */
+        :root {
+            --iron-primary: #2c3e50;
+            --iron-secondary: #34495e;
+            --iron-accent: #e74c3c;
+            --iron-success: #27ae60;
+            --iron-warning: #f39c12;
+            --iron-info: #3498db;
+            --iron-light: #ecf0f1;
+            --iron-dark: #1a252f;
+            --iron-border: #5d6d7e;
+            --iron-shadow: rgba(0, 0, 0, 0.3);
+            --iron-glow: rgba(231, 76, 60, 0.3);
+        }
+
         * {
             margin: 0;
             padding: 0;
@@ -13,41 +28,43 @@
 
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
-            color: white;
-            min-height: 100vh;
-            overflow-x: hidden;
+            background: linear-gradient(135deg, var(--iron-dark) 0%, var(--iron-primary) 100%);
+            color: var(--iron-light);
+            overflow: hidden;
+            height: 100vh;
         }
 
         .game-container {
             display: grid;
-            grid-template-columns: 1fr 300px;
-            grid-template-rows: 60px 1fr;
+            grid-template-areas: 
+                "header header header"
+                "hp-bar game-area players"
+                "hp-bar game-area chat";
+            grid-template-columns: 200px 1fr 300px;
+            grid-template-rows: 60px 1fr 250px;
             height: 100vh;
             gap: 10px;
             padding: 10px;
         }
 
+        /* Header */
         .header {
-            grid-column: 1 / -1;
+            grid-area: header;
+            background: var(--iron-secondary);
+            border: 2px solid var(--iron-border);
+            border-radius: 8px;
             display: flex;
-            align-items: center;
             justify-content: space-between;
-            background: rgba(255, 255, 255, 0.1);
-            backdrop-filter: blur(10px);
-            border-radius: 15px;
+            align-items: center;
             padding: 0 20px;
-            border: 1px solid rgba(255, 255, 255, 0.2);
+            box-shadow: 0 2px 10px var(--iron-shadow);
         }
 
         .logo {
             font-size: 24px;
             font-weight: bold;
-            background: linear-gradient(45deg, #4ecdc4, #44a08d);
-            background-clip: text;
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            color: transparent;
+            color: var(--iron-accent);
+            text-shadow: 0 0 10px var(--iron-glow);
         }
 
         .user-info {
@@ -58,125 +75,175 @@
         }
 
         .ping-display {
-            background: rgba(0, 0, 0, 0.4);
-            padding: 4px 8px;
-            border-radius: 12px;
-            font-size: 11px;
-            color: #4ecdc4;
-            border: 1px solid rgba(76, 205, 196, 0.3);
+            background: var(--iron-dark);
+            padding: 6px 12px;
+            border-radius: 6px;
+            font-size: 12px;
             font-weight: bold;
+            border: 1px solid var(--iron-border);
         }
 
-        .ping-good { color: #4ecdc4; }
-        .ping-ok { color: #f39c12; }
-        .ping-bad { color: #e74c3c; }
+        .ping-good { color: var(--iron-success); }
+        .ping-ok { color: var(--iron-warning); }
+        .ping-bad { color: var(--iron-accent); }
 
         .status-indicator {
-            width: 8px;
-            height: 8px;
+            width: 12px;
+            height: 12px;
             border-radius: 50%;
-            background: #4ecdc4;
+            background: var(--iron-success);
             animation: pulse 2s infinite;
         }
 
         @keyframes pulse {
             0%, 100% { opacity: 1; }
-            50% { opacity: 0.3; }
+            50% { opacity: 0.5; }
         }
 
-        .game-area {
-            background: rgba(255, 255, 255, 0.05);
-            backdrop-filter: blur(10px);
-            border-radius: 15px;
-            border: 1px solid rgba(255, 255, 255, 0.2);
-            padding: 20px;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            position: relative;
+        /* HP Bar Area */
+        .hp-section {
+            grid-area: hp-bar;
+            background: var(--iron-secondary);
+            border: 2px solid var(--iron-border);
+            border-radius: 8px;
+            padding: 15px;
+            box-shadow: 0 2px 10px var(--iron-shadow);
+        }
+
+        .hp-section h3 {
+            color: var(--iron-accent);
+            margin-bottom: 15px;
+            font-size: 16px;
+            text-align: center;
+        }
+
+        .stat-bar {
+            margin-bottom: 12px;
+        }
+
+        .stat-label {
+            font-size: 12px;
+            margin-bottom: 4px;
+            color: var(--iron-light);
+        }
+
+        .bar-container {
+            background: var(--iron-dark);
+            border-radius: 4px;
+            height: 20px;
+            border: 1px solid var(--iron-border);
             overflow: hidden;
         }
 
-        .game-canvas {
-            border: 2px solid #4ecdc4;
-            border-radius: 10px;
-            background: #000;
-            box-shadow: 0 0 20px rgba(78, 205, 196, 0.3);
-            cursor: crosshair;
-        }
-
-        .game-controls {
-            position: absolute;
-            top: 20px;
-            left: 20px;
-            background: rgba(0, 0, 0, 0.8);
-            border-radius: 10px;
-            padding: 15px;
-            font-size: 12px;
-            max-width: 200px;
-        }
-
-        .game-controls h3 {
-            color: #4ecdc4;
-            margin-bottom: 10px;
-            font-size: 14px;
-        }
-
-        .game-controls ul {
-            list-style: none;
-            line-height: 1.6;
-        }
-
-        .game-controls li {
-            margin-bottom: 5px;
+        .bar-fill {
+            height: 100%;
+            transition: width 0.3s ease;
+            background: linear-gradient(90deg, var(--iron-success), var(--iron-warning));
         }
 
         .position-info {
-            position: absolute;
-            bottom: 20px;
-            left: 20px;
-            background: rgba(0, 0, 0, 0.8);
-            border-radius: 10px;
-            padding: 10px 15px;
+            background: var(--iron-dark);
+            padding: 10px;
+            border-radius: 6px;
+            border: 1px solid var(--iron-border);
+            margin-top: 15px;
+            text-align: center;
             font-size: 12px;
-            font-family: 'Courier New', monospace;
         }
 
-        .sidebar {
+        /* Game Area */
+        .game-area {
+            grid-area: game-area;
+            background: var(--iron-secondary);
+            border: 2px solid var(--iron-border);
+            border-radius: 8px;
+            padding: 15px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            box-shadow: 0 2px 10px var(--iron-shadow);
+        }
+
+        .game-canvas {
+            border: 2px solid var(--iron-border);
+            background: var(--iron-dark);
+            cursor: crosshair;
+            max-width: 100%;
+            max-height: 100%;
+        }
+
+        /* Players List */
+        .players-section {
+            grid-area: players;
+            background: var(--iron-secondary);
+            border: 2px solid var(--iron-border);
+            border-radius: 8px;
+            padding: 15px;
+            box-shadow: 0 2px 10px var(--iron-shadow);
+        }
+
+        .players-section h3 {
+            color: var(--iron-accent);
+            margin-bottom: 15px;
+            font-size: 16px;
+            text-align: center;
+        }
+
+        .players-list {
+            max-height: 200px;
+            overflow-y: auto;
+        }
+
+        .player-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px 12px;
+            margin-bottom: 4px;
+            background: var(--iron-dark);
+            border-radius: 4px;
+            border: 1px solid var(--iron-border);
+            font-size: 12px;
+        }
+
+        .player-name {
+            font-weight: bold;
+        }
+
+        .player-pos {
+            color: var(--iron-info);
+            font-size: 10px;
+        }
+
+        /* Chat Section */
+        .chat-section {
+            grid-area: chat;
+            background: var(--iron-secondary);
+            border: 2px solid var(--iron-border);
+            border-radius: 8px;
+            padding: 15px;
             display: flex;
             flex-direction: column;
-            gap: 10px;
+            box-shadow: 0 2px 10px var(--iron-shadow);
         }
 
-        .panel {
-            background: rgba(255, 255, 255, 0.05);
-            backdrop-filter: blur(10px);
-            border-radius: 15px;
-            border: 1px solid rgba(255, 255, 255, 0.2);
-            padding: 20px;
-            flex: 1;
-        }
-
-        .panel h2 {
-            font-size: 18px;
+        .chat-section h3 {
+            color: var(--iron-accent);
             margin-bottom: 15px;
-            color: #4ecdc4;
-            display: flex;
-            align-items: center;
-            gap: 8px;
+            font-size: 16px;
+            text-align: center;
         }
 
         .chat-messages {
-            height: 200px;
+            flex: 1;
             overflow-y: auto;
-            background: rgba(0, 0, 0, 0.3);
-            border-radius: 10px;
+            background: var(--iron-dark);
+            border-radius: 6px;
             padding: 10px;
             margin-bottom: 10px;
-            font-size: 12px;
+            font-size: 11px;
             line-height: 1.4;
-            border: 1px solid rgba(255, 255, 255, 0.1);
+            border: 1px solid var(--iron-border);
         }
 
         .chat-messages::-webkit-scrollbar {
@@ -184,100 +251,110 @@
         }
 
         .chat-messages::-webkit-scrollbar-track {
-            background: rgba(255, 255, 255, 0.1);
-            border-radius: 3px;
+            background: var(--iron-dark);
         }
 
         .chat-messages::-webkit-scrollbar-thumb {
-            background: #4ecdc4;
+            background: var(--iron-accent);
             border-radius: 3px;
         }
 
         .chat-input-container {
             display: flex;
-            gap: 10px;
+            gap: 8px;
         }
 
         .chat-input {
             flex: 1;
             padding: 8px 12px;
-            border: 1px solid rgba(255, 255, 255, 0.3);
-            border-radius: 20px;
-            background: rgba(255, 255, 255, 0.1);
-            color: white;
+            border: 1px solid var(--iron-border);
+            border-radius: 4px;
+            background: var(--iron-dark);
+            color: var(--iron-light);
             font-size: 12px;
             outline: none;
-            transition: border-color 0.3s ease;
-        }
-
-        .chat-input::placeholder {
-            color: rgba(255, 255, 255, 0.6);
         }
 
         .chat-input:focus {
-            border-color: #4ecdc4;
+            border-color: var(--iron-accent);
+            box-shadow: 0 0 5px var(--iron-glow);
         }
 
         .send-btn {
-            padding: 8px 15px;
-            background: linear-gradient(45deg, #4ecdc4, #44a08d);
+            padding: 8px 16px;
+            background: linear-gradient(45deg, var(--iron-accent), #c0392b);
             border: none;
-            border-radius: 20px;
+            border-radius: 4px;
             color: white;
             font-size: 12px;
+            font-weight: bold;
             cursor: pointer;
             transition: transform 0.2s ease;
         }
 
         .send-btn:hover {
-            transform: translateY(-2px);
+            transform: translateY(-1px);
+            box-shadow: 0 2px 5px var(--iron-shadow);
         }
 
-        .setup-form {
-            background: rgba(255, 255, 255, 0.1);
-            border-radius: 10px;
-            padding: 15px;
-            margin-bottom: 15px;
+        /* Setup Panel */
+        .setup-panel {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: var(--iron-secondary);
+            border: 2px solid var(--iron-border);
+            border-radius: 12px;
+            padding: 30px;
+            min-width: 400px;
+            box-shadow: 0 10px 30px var(--iron-shadow);
+            z-index: 1000;
+        }
+
+        .setup-panel h2 {
+            color: var(--iron-accent);
+            text-align: center;
+            margin-bottom: 20px;
+            font-size: 24px;
         }
 
         .form-group {
-            margin-bottom: 10px;
+            margin-bottom: 15px;
         }
 
         .form-group label {
             display: block;
             margin-bottom: 5px;
-            font-size: 12px;
-            color: #4ecdc4;
+            font-size: 14px;
+            color: var(--iron-light);
+            font-weight: bold;
         }
 
         .form-group input {
             width: 100%;
-            padding: 8px 12px;
-            border: 1px solid rgba(255, 255, 255, 0.3);
-            border-radius: 8px;
-            background: rgba(255, 255, 255, 0.1);
-            color: white;
-            font-size: 12px;
-            outline: none;
-        }
-
-        .form-group input::placeholder {
-            color: rgba(255, 255, 255, 0.6);
+            padding: 12px;
+            border: 1px solid var(--iron-border);
+            border-radius: 6px;
+            background: var(--iron-dark);
+            color: var(--iron-light);
+            font-size: 14px;
         }
 
         .form-group input:focus {
-            border-color: #4ecdc4;
+            border-color: var(--iron-accent);
+            box-shadow: 0 0 10px var(--iron-glow);
+            outline: none;
         }
 
         .connect-btn {
             width: 100%;
-            padding: 10px;
-            background: linear-gradient(45deg, #4ecdc4, #44a08d);
+            padding: 15px;
+            background: linear-gradient(45deg, var(--iron-accent), #c0392b);
             border: none;
-            border-radius: 8px;
+            border-radius: 6px;
             color: white;
-            font-size: 14px;
+            font-size: 16px;
             font-weight: bold;
             cursor: pointer;
             transition: transform 0.2s ease;
@@ -285,49 +362,57 @@
 
         .connect-btn:hover {
             transform: translateY(-2px);
-        }
-
-        .stats {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 10px;
-            margin-bottom: 15px;
-        }
-
-        .stat-item {
-            background: rgba(0, 0, 0, 0.3);
-            border-radius: 8px;
-            padding: 10px;
-            text-align: center;
-            border: 1px solid rgba(255, 255, 255, 0.1);
-        }
-
-        .stat-value {
-            font-size: 16px;
-            font-weight: bold;
-            color: #4ecdc4;
-        }
-
-        .stat-label {
-            font-size: 10px;
-            margin-top: 2px;
-            opacity: 0.8;
+            box-shadow: 0 5px 15px var(--iron-shadow);
         }
 
         .hidden {
             display: none !important;
         }
 
+        /* Mobile Responsive */
         @media (max-width: 768px) {
             .game-container {
+                grid-template-areas: 
+                    "header"
+                    "game-area"
+                    "hp-bar"
+                    "players"
+                    "chat";
                 grid-template-columns: 1fr;
-                grid-template-rows: 60px 1fr 250px;
+                grid-template-rows: 60px 2fr 120px 150px 200px;
+                padding: 5px;
+                gap: 5px;
             }
-            
-            .game-controls {
-                position: static;
-                margin-bottom: 10px;
-                max-width: none;
+
+            .setup-panel {
+                min-width: 90vw;
+                padding: 20px;
+            }
+
+            .game-canvas {
+                width: 100%;
+                height: auto;
+            }
+
+            .header {
+                padding: 0 10px;
+            }
+
+            .logo {
+                font-size: 18px;
+            }
+        }
+
+        @media (max-width: 480px) {
+            .user-info {
+                flex-direction: column;
+                gap: 5px;
+                font-size: 12px;
+            }
+
+            .ping-display {
+                padding: 4px 8px;
+                font-size: 10px;
             }
         }
     </style>
@@ -345,68 +430,66 @@
             </div>
         </header>
 
-        <!-- Game Area -->
-        <main class="game-area">
-            <div class="game-controls">
-                <h3>🎮 Controls</h3>
-                <ul>
-                    <li><strong>Left Click:</strong> Move to position</li>
-                    <li><strong>Mouse Wheel:</strong> Zoom (coming soon)</li>
-                    <li><strong>WASD:</strong> Pan camera (coming soon)</li>
-                </ul>
+        <!-- HP/Stats Section -->
+        <section class="hp-section">
+            <h3>⚔️ Combat Stats</h3>
+            <div class="stat-bar">
+                <div class="stat-label">Health</div>
+                <div class="bar-container">
+                    <div class="bar-fill" id="healthBar" style="width: 100%"></div>
+                </div>
             </div>
-
-            <canvas id="gameCanvas" class="game-canvas" width="640" height="640"></canvas>
-
+            <div class="stat-bar">
+                <div class="stat-label">Resources</div>
+                <div class="bar-container">
+                    <div class="bar-fill" id="resourceBar" style="width: 0%; background: linear-gradient(90deg, var(--iron-info), var(--iron-success))"></div>
+                </div>
+            </div>
             <div class="position-info">
                 <div>Position: <span id="positionDisplay">Not Set</span></div>
                 <div>Grid: <span id="gridInfo">64x64</span></div>
             </div>
+        </section>
+
+        <!-- Game Area -->
+        <main class="game-area">
+            <canvas id="gameCanvas" class="game-canvas" width="800" height="600"></canvas>
         </main>
 
-        <!-- Sidebar -->
-        <aside class="sidebar">
-            <!-- Setup Panel -->
-            <div class="panel" id="setupPanel">
-                <h2>🎯 Join Game</h2>
-                <div class="setup-form">
-                    <div class="form-group">
-                        <label for="usernameInput">Username:</label>
-                        <input type="text" id="usernameInput" placeholder="Enter your battle name" maxlength="20">
-                    </div>
-                    <div class="form-group">
-                        <label for="roomInput">Room:</label>
-                        <input type="text" id="roomInput" value="general" placeholder="battlefield1">
-                    </div>
-                    <button class="connect-btn" onclick="connectToGame()">⚔️ Enter Battle</button>
+        <!-- Online Players -->
+        <section class="players-section">
+            <h3>🟢 Online Players</h3>
+            <div class="players-list" id="playersList">
+                <div class="player-item">
+                    <span class="player-name">Connecting...</span>
+                    <span class="player-pos">--</span>
                 </div>
             </div>
+        </section>
 
-            <!-- Stats Panel -->
-            <div class="panel hidden" id="statsPanel">
-                <h2>📊 Battle Stats</h2>
-                <div class="stats">
-                    <div class="stat-item">
-                        <div class="stat-value" id="healthStat">100</div>
-                        <div class="stat-label">Health</div>
-                    </div>
-                    <div class="stat-item">
-                        <div class="stat-value" id="resourcesStat">0</div>
-                        <div class="stat-label">Resources</div>
-                    </div>
-                </div>
+        <!-- Chat Section -->
+        <section class="chat-section">
+            <h3>💬 Battle Chat</h3>
+            <div class="chat-messages" id="chatMessages"></div>
+            <div class="chat-input-container">
+                <input type="text" id="chatInput" class="chat-input" placeholder="Type your message..." maxlength="500">
+                <button class="send-btn" onclick="sendMessage()">Send</button>
             </div>
+        </section>
+    </div>
 
-            <!-- Chat Panel -->
-            <div class="panel">
-                <h2>💬 Command Chat</h2>
-                <div class="chat-messages" id="chatMessages"></div>
-                <div class="chat-input-container">
-                    <input type="text" id="chatInput" class="chat-input" placeholder="Type your message..." maxlength="500">
-                    <button class="send-btn" onclick="sendMessage()">Send</button>
-                </div>
-            </div>
-        </aside>
+    <!-- Setup Panel -->
+    <div class="setup-panel" id="setupPanel">
+        <h2>🎯 Join Battle</h2>
+        <div class="form-group">
+            <label for="usernameInput">Battle Name:</label>
+            <input type="text" id="usernameInput" placeholder="Enter your warrior name" maxlength="20">
+        </div>
+        <div class="form-group">
+            <label for="roomInput">Battlefield:</label>
+            <input type="text" id="roomInput" value="general" placeholder="general">
+        </div>
+        <button class="connect-btn" onclick="connectToGame()">⚔️ Enter Battle</button>
     </div>
 
     <script type="module" src="./main.js"></script>

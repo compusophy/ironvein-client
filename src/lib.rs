@@ -355,6 +355,9 @@ impl IronVeinClient {
                             console_log!("🟢 Player {} joined at ({}, {})", username, x, y);
                             append_message(&format!("🟢 {} joined the battle at ({}, {})", username, x, y));
                             
+                            // Add to online players list
+                            update_player_in_list(&username, x, y, 100, 0);
+                            
                             // If this is me joining, set my position
                             let window = web_sys::window().unwrap();
                             if let Ok(game_client) = js_sys::Reflect::get(&window, &"gameClient".into()) {
@@ -378,6 +381,9 @@ impl IronVeinClient {
                         WebSocketMessage::PlayerLeft { username } => {
                             console_log!("🔴 Player {} left", username);
                             append_message(&format!("🔴 {} left the battle", username));
+                            
+                            // Remove from online players list
+                            remove_player_from_list(&username);
                         }
                         WebSocketMessage::Error { message } => {
                             console_log!("❌ Server error: {}", message);
@@ -385,6 +391,9 @@ impl IronVeinClient {
                         }
                         WebSocketMessage::PlayerUpdate { username, x, y, health, resources } => {
                             console_log!("🎮 Player {} moved to ({}, {})", username, x, y);
+                            
+                            // Update online players list
+                            update_player_in_list(&username, x, y, health, resources);
                             
                             // Call update_player on global gameClient
                             let window = web_sys::window().unwrap();
@@ -407,6 +416,11 @@ impl IronVeinClient {
                         }
                         WebSocketMessage::GameState { players } => {
                             console_log!("🌍 Received game state with {} players", players.len());
+                            
+                            // Update all players in the online list
+                            for player in &players {
+                                update_player_in_list(&player.username, player.x, player.y, player.health, player.resources);
+                            }
                             
                             // Call update_all_players on global gameClient
                             let window = web_sys::window().unwrap();
@@ -623,4 +637,30 @@ use console_log;
 #[wasm_bindgen(start)]
 pub fn main() {
     console_log!("🚀 IronVein Chat Client WASM module initialized!");
+}
+
+fn update_player_in_list(username: &str, x: u32, y: u32, health: u32, resources: u32) {
+    let window = web_sys::window().unwrap();
+    if let Ok(update_fn) = js_sys::Reflect::get(&window, &"updatePlayerInList".into()) {
+        if let Ok(func) = update_fn.dyn_into::<js_sys::Function>() {
+            let args = js_sys::Array::new();
+            args.push(&username.into());
+            args.push(&(x as f64).into());
+            args.push(&(y as f64).into());
+            args.push(&(health as f64).into());
+            args.push(&(resources as f64).into());
+            let _ = func.apply(&window, &args);
+        }
+    }
+}
+
+fn remove_player_from_list(username: &str) {
+    let window = web_sys::window().unwrap();
+    if let Ok(remove_fn) = js_sys::Reflect::get(&window, &"removePlayerFromList".into()) {
+        if let Ok(func) = remove_fn.dyn_into::<js_sys::Function>() {
+            let args = js_sys::Array::new();
+            args.push(&username.into());
+            let _ = func.apply(&window, &args);
+        }
+    }
 } 
